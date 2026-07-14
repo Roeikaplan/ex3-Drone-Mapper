@@ -11,7 +11,7 @@
 #include <functional>
 #include <memory>
 
-namespace Common {
+namespace common {
 
 struct MissionControlDependencies {
     const types::MissionConfigData& mission_config;
@@ -28,4 +28,4 @@ struct MissionControlDependencies {
 using MissionControlFactory =
     std::function<std::unique_ptr<IMissionControl>(MissionControlDependencies)>;
 
-} // namespace Common
+} // namespace common

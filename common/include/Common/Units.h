@@ -4,7 +4,7 @@
 #include <mp-units/systems/isq.h>
 #include <mp-units/systems/si/unit_symbols.h>
 
-namespace Common {
+namespace common {
 
 namespace mp = mp_units;
 namespace isq = mp_units::isq;
@@ -46,4 +46,4 @@ struct Orientation {
     return {lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z};
 }
 
-} // namespace Common
+} // namespace common

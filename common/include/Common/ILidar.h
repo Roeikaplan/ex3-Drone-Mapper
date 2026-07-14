@@ -2,7 +2,7 @@
 
 #include <Common/Types.h>
 
-namespace Common {
+namespace common {
 
 class ILidar {
 public:
@@ -11,4 +11,4 @@ public:
     [[nodiscard]] virtual types::LidarConfigData config() const = 0;
 };
 
-} // namespace Common
+} // namespace common

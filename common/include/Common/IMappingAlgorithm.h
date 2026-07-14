@@ -2,7 +2,7 @@
 
 #include <Common/IMap3D.h>
 
-namespace Common {
+namespace common {
 
 struct MappingAlgorithmDependencies {
     const types::MissionConfigData& mission_config;
@@ -32,4 +32,4 @@ protected:
     const IMap3D& output_map_;
 };
 
-} // namespace Common
+} // namespace common

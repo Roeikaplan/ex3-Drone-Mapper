@@ -2,7 +2,7 @@
 
 #include <Simulator/SimulationTypes.h>
 
-namespace Simulator {
+namespace simulator {
 
 class ISimulation {
 public:
@@ -12,4 +12,4 @@ public:
         const std::filesystem::path& output_path) = 0;
 };
 
-} // namespace Simulator
+} // namespace simulator

@@ -2,7 +2,7 @@
 
 #include <Common/Units.h>
 
-namespace Common::types {
+namespace common::types {
 
 enum class VoxelOccupancy : signed char {
     PotentiallyOccupied = -3,
@@ -33,4 +33,4 @@ struct MapConfig {
     PhysicalLength resolution{};
 };
 
-} // namespace Common::types
+} // namespace common::types

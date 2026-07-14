@@ -1,2 +1,2 @@
 # TODO: Build each MissionControl implementation as a SHARED library.
-# Link it to Common::Common and expose common_mission_control/include privately.
+# Link it to common::common and expose common_mission_control/include privately.

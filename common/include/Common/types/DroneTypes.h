@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-namespace Common::types {
+namespace common::types {
 
 struct DroneConfigData {
     PhysicalLength radius{};
@@ -53,4 +53,4 @@ struct DroneStepResult {
     std::string message{};
 };
 
-} // namespace Common::types
+} // namespace common::types

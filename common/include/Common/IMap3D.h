@@ -2,7 +2,7 @@
 
 #include <Common/Types.h>
 
-namespace Common {
+namespace common {
 
 class IMap3D {
 public:
@@ -12,4 +12,4 @@ public:
     [[nodiscard]] virtual bool isInBounds(const Position3D& pos) const = 0;
 };
 
-} // namespace Common
+} // namespace common

@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace Common::types {
+namespace common::types {
 
 struct MissionConfigData {
     std::size_t max_steps = 0;
@@ -28,4 +28,4 @@ struct MissionRunResult {
     std::vector<ErrorRef> errors{};
 };
 
-} // namespace Common::types
+} // namespace common::types

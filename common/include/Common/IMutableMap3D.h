@@ -4,7 +4,7 @@
 
 #include <filesystem>
 
-namespace Common {
+namespace common {
 
 class IMutableMap3D : public IMap3D {
 public:
@@ -13,4 +13,4 @@ public:
     virtual void save(const std::filesystem::path& path) const = 0;
 };
 
-} // namespace Common
+} // namespace common

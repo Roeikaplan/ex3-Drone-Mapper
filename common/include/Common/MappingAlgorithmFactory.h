@@ -5,9 +5,9 @@
 #include <functional>
 #include <memory>
 
-namespace Common {
+namespace common {
 
 using MappingAlgorithmFactory =
     std::function<std::unique_ptr<IMappingAlgorithm>(MappingAlgorithmDependencies)>;
 
-} // namespace Common
+} // namespace common

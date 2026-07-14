@@ -2,7 +2,7 @@
 
 #include <Simulator/SimulationTypes.h>
 
-namespace Simulator {
+namespace simulator {
 
 class ISimulationRun {
 public:
@@ -10,4 +10,4 @@ public:
     [[nodiscard]] virtual types::SimulationResult run() = 0;
 };
 
-} // namespace Simulator
+} // namespace simulator

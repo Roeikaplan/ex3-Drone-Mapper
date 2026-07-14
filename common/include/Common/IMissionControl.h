@@ -2,7 +2,7 @@
 
 #include <Common/Types.h>
 
-namespace Common {
+namespace common {
 
 class IMissionControl {
 public:
@@ -10,4 +10,4 @@ public:
     [[nodiscard]] virtual types::MissionRunResult runMission() = 0;
 };
 
-} // namespace Common
+} // namespace common

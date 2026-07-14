@@ -2,7 +2,7 @@
 
 #include <Common/Types.h>
 
-namespace Common {
+namespace common {
 
 class IDroneMovement {
 public:
@@ -12,4 +12,4 @@ public:
     virtual types::MovementResult elevate(PhysicalLength distance) = 0;
 };
 
-} // namespace Common
+} // namespace common

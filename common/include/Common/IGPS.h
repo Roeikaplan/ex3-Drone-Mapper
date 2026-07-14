@@ -2,7 +2,7 @@
 
 #include <Common/Types.h>
 
-namespace Common {
+namespace common {
 
 class IGPS {
 public:
@@ -11,4 +11,4 @@ public:
     [[nodiscard]] virtual Orientation heading() const = 0;
 };
 
-} // namespace Common
+} // namespace common

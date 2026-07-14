@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace Common::types {
+namespace common::types {
 
 struct LidarConfigData {
     PhysicalLength z_min{};
@@ -21,4 +21,4 @@ struct LidarHit {
 
 using LidarScanResult = std::vector<LidarHit>;
 
-} // namespace Common::types
+} // namespace common::types

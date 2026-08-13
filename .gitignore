@@ -40,3 +40,9 @@ Thumbs.db
 
 # Generated simulation files
 simulation_output.yaml
+
+# Local-only project files
+ex2/
+.claude/
+CLAUDE.md
+project_context.md

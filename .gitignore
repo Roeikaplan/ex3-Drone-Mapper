@@ -42,7 +42,6 @@ Thumbs.db
 simulation_output.yaml
 
 # Local-only project files
-ex2/
+
 .claude/
-CLAUDE.md
-project_context.md
+

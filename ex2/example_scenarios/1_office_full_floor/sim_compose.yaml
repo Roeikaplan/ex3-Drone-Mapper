@@ -1,0 +1,11 @@
+# Self-contained input set drawn VERBATIM from the provided inputs/ dataset
+# (real simulation/mission/drone/lidar configs), in the mandated file-reference layout.
+simulation_compositions:
+  simulations:
+    - simulation_config: "simulation/scene.yaml"
+      mission_configs:
+        - "mission/mission.yaml"
+  drone_configs:
+    - "drone/drone.yaml"
+  lidar_configs:
+    - "lidar/lidar.yaml"

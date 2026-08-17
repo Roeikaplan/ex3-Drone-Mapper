@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Read this first: `project_context.md`
+## Read these first: `project_context.md` and `docs/HLD.md`
 
 `project_context.md` (repo root) is the **baseline for Assignment 3** and takes precedence over this
 file wherever the two disagree. Read it before answering a question, planning architecture, or writing
@@ -11,6 +11,15 @@ report formats, threading rules), the plugin/registration design decisions and t
 them, the constraints checklist every change is verified against, and the open decisions that are still
 unresolved. If a request conflicts with something recorded there, say so and ask rather than silently
 choosing. When one of its open decisions gets resolved, update it as part of that work.
+
+`docs/HLD.md` is the **architecture** that satisfies that baseline — read it before designing or naming
+anything new, and before writing a `.cpp` that has to fit into the object graph. It holds the class and
+sequence diagrams (plugin load/registration, task-table dispatch, factory wiring, the mission loop,
+scan-to-voxels, scoring, teardown, report writing), the component catalogue with the class names to use,
+the ownership/lifetime model, the error-containment ladder, and a rationale section explaining *why* each
+non-obvious choice was made. Precedence: `project_context.md` (requirements) > `docs/HLD.md`
+(architecture) > this file. If an implementation choice contradicts the HLD, either follow the HLD or
+update it in the same change — do not let the two drift.
 
 ## What this is
 
@@ -51,6 +60,10 @@ There is currently no `enable_testing()`/`add_test()` wiring anywhere in the tre
 declared dependency — that needs to be set up as part of implementation work, likely per-subproject.
 
 ## Architecture
+
+> This section describes the **skeleton as provided**. For the design being built on top of it — the
+> orchestration layer above `ISimulation`, the plugin-pair-bound run factory, the task table and executor,
+> the report writers, and the diagrams tying them together — see `docs/HLD.md`.
 
 ### Layering and plugin model
 

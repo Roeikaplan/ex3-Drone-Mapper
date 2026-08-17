@@ -1,0 +1,7 @@
+sequence:
+  - first_v
+  - 2nd_v
+  - v3
+  - v_fourth
+float_val: 3.141592653589793
+int_val: 89

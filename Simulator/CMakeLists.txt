@@ -1,3 +1,69 @@
-# TODO: Build the simulator executable and its private implementation sources.
-# Link the executable with common::common and ${CMAKE_DL_LIBS}, and export the
-# registration-constructor symbols needed by dynamically loaded plugins.
+# Simulator executable: the plugin host. It owns the mocks, the maps, the composition loader,
+# the scoring, and the report writers, so it is the only target that needs yaml-cpp and TinyNPY.
+# ${CMAKE_DL_LIBS} provides dlopen/dlsym/dlclose.
+
+add_executable(simulator_323998450_211633813
+    src/main.cpp
+    src/PluginLibrary.cpp
+    src/PluginLoader.cpp
+    src/PluginSmokeCheck.cpp
+    src/Registrar.cpp
+    src/RegistrationEntryPoints.cpp
+)
+
+target_include_directories(simulator_323998450_211633813
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/common_simulator/include
+)
+
+target_link_libraries(simulator_323998450_211633813
+    PRIVATE
+        common::common
+        yaml-cpp::yaml-cpp
+        TinyNPY::TinyNPY
+        ${CMAKE_DL_LIBS}
+)
+
+# Plugins ship with an UNDEFINED symbol for their registration constructor, which is defined in
+# THIS executable (src/RegistrationEntryPoints.cpp) and resolved against it at dlopen time.
+# Without exported dynamic symbols the build still succeeds and dlopen fails at runtime with
+# "undefined symbol".
+set_target_properties(simulator_323998450_211633813 PROPERTIES
+    ENABLE_EXPORTS ON
+)
+
+drone_warnings(simulator_323998450_211633813)
+
+# ---------------------------------------------------------------------------------------------
+# Test fixtures: do-nothing plugins, kept permanently as test doubles.
+#
+# They are separate from the real Algorithm_/MissionControl_ targets on purpose. Comparative mode
+# groups mission controls by behaviour, so it needs two or more MissionControl .so files to have
+# anything to group; competitive mode needs a folder holding several algorithms. Building them
+# here means phases 04 and 07 have known-good inputs that never change as the real plugins evolve.
+# ---------------------------------------------------------------------------------------------
+
+# Declare one fixture plugin.
+#   target - CMake target and artifact stem (no "lib" prefix is emitted)
+#   source - the fixture translation unit
+#   kind   - "algorithms" or "mission_controls"; selects the output folder so a whole folder can
+#            be handed to -comparative / -competition directly
+function(drone_fixture_plugin target source kind)
+    add_library(${target} SHARED ${source})
+    target_link_libraries(${target} PRIVATE common::common)
+    set_target_properties(${target} PROPERTIES
+        PREFIX ""
+        LIBRARY_OUTPUT_DIRECTORY "${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures/${kind}"
+    )
+    drone_warnings(${target})
+endfunction()
+
+drone_fixture_plugin(StubAlgorithm_A      tests/fixtures/StubAlgorithm.cpp      algorithms)
+drone_fixture_plugin(StubMissionControl_A tests/fixtures/StubMissionControl.cpp mission_controls)
+drone_fixture_plugin(StubMissionControl_B tests/fixtures/StubMissionControl.cpp mission_controls)
+
+# The two mission-control fixtures differ only in the step count they report, which is exactly the
+# axis comparative grouping keys on: same source, different observable behaviour.
+target_compile_definitions(StubMissionControl_A PRIVATE STUB_MC_STEPS=1)
+target_compile_definitions(StubMissionControl_B PRIVATE STUB_MC_STEPS=2)

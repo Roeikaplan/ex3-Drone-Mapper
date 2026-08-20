@@ -679,3 +679,67 @@ Verify every change against this list before calling it done:
 - `students.txt` — one line per submitter, name and ID
 - `README.md` — implementation notes and remarks, at the zip root
 - **Excluded:** binary files, external libraries
+
+---
+
+## 10. Documentation Conventions
+
+**Carried over from Ex2 unchanged** (`ex2/CLAUDE.md` §"Documentation Conventions"). Every file
+written for Ex3 follows this house style. Ex2 exemplars to match: `ex2/include/drone_mapper/MockGPS.h`
+and `MockMovement.h` for headers; `ex2/src/MockMovement.cpp`, `ScanResultToVoxels.cpp`, and
+`Map3DImpl.cpp` for sources; `ex2/src/maps_comparison_main.cpp` for file-local helpers.
+
+### 10.1 The five rules
+
+- **Doxygen blocks only — never `//`.** Every comment is a `/** ... */` block carrying `@brief`
+  and, where there is a boundary or assumption to state, `@note`. This holds **everywhere**: file
+  headers (`@file` + `@brief` + `@note`), classes, methods, file-local helpers, and explanatory
+  comments inside a function body (a bare `/** @note ... */` block). `//` line comments are not
+  used in this project.
+- **Headers** — a Doxygen block on every class and on each public method or notable member:
+  `@brief`, `@param`, `@return`, and a `@note` calling out the architectural boundary (who owns a
+  responsibility, and why). The `@note` is the part that carries the design, e.g. *"DroneControl owns
+  all movement validation because `MockMovement` never validates."*
+- **Sources** — concise, *why*-focused blocks explaining intent, never the obvious mechanics.
+- **File-local helpers** — free functions and anonymous-namespace helpers get the **same full
+  Doxygen block** as header methods, even short throwaway ones: `@brief`, `@param`, `@return`, and a
+  `@note` for any assumption or boundary.
+- **Density** — match the surrounding file; never restate what the code plainly says.
+
+### 10.2 Things that must always be documented
+
+Carried from Ex2, and still binding wherever the code appears:
+
+- The **unit-stripping idiom**: `force_numerical_value_in(cm)` → scale the plain scalar → re-attach
+  the `x_extent[cm]` quantity spec.
+- The **angle convention**: `0° = +X east`, `90° = +Y south`.
+- The **movement-before-scan ordering**, and the **first-step `nullptr` bootstrap**.
+- Any non-obvious branch or invariant: BFS frontier selection and termination, rotation splitting by
+  `max_rotate`, evidence-priority voxel merging.
+
+**New in Ex3** — these are the Ex3-specific invariants that a reader cannot infer from the code, so
+every file touching them says so explicitly:
+
+- **The plugin's undefined symbol is the mechanism, not a defect.** Any file involved in
+  registration states that the constructor is declared in `common/`, defined only in the Simulator,
+  and resolved at `dlopen` time — and that this requires `ENABLE_EXPORTS`.
+- **Teardown ordering.** Anything holding a plugin-derived object or a factory documents that it must
+  be destroyed before `dlclose`, and *why* scope-based ordering cannot be relied on.
+- **Load-then-claim.** The loader documents that the file↔factory association is inferred temporally
+  and is valid only because loading is serial.
+- **Thread-safety posture.** Every shared object states whether it is synchronised and why: the error
+  log and `std::cout` are locked; the results table is not, because cells are disjoint; the registrar
+  is not, because it is only touched during serial loading.
+- **Plugin isolation.** Wherever the hidden map is reachable, note that it must never cross the `.so`
+  boundary.
+
+### 10.3 Ex3 exemplars
+
+As Ex3 files land, these become the reference for new code in each layer:
+
+| Layer | Exemplar |
+|---|---|
+| Simulator header | `Simulator/include/Simulator/Registrar.h` |
+| Simulator source | `Simulator/src/PluginLoader.cpp` |
+| Plugin implementation | `MissionControl/src/MissionControlImpl.cpp` |
+| File-local helpers | `Simulator/src/SimulationRunFactoryImpl.cpp` |

@@ -701,9 +701,14 @@ and `MockMovement.h` for headers; `ex2/src/MockMovement.cpp`, `ScanResultToVoxel
   responsibility, and why). The `@note` is the part that carries the design, e.g. *"DroneControl owns
   all movement validation because `MockMovement` never validates."*
 - **Sources** — concise, *why*-focused blocks explaining intent, never the obvious mechanics.
+- **Every function definition in a `.cpp` carries its own Doxygen block**, including the definitions
+  of functions already documented on their header declaration. The header block states the contract
+  for callers; the definition block states the *implementation's* reasoning — why this algorithm,
+  what invariant it upholds, what it deliberately does not do. Do not skip one because the other
+  exists.
 - **File-local helpers** — free functions and anonymous-namespace helpers get the **same full
-  Doxygen block** as header methods, even short throwaway ones: `@brief`, `@param`, `@return`, and a
-  `@note` for any assumption or boundary.
+  Doxygen block**, even short throwaway ones: `@brief`, `@param`, `@return`, and a `@note` for any
+  assumption or boundary.
 - **Density** — match the surrounding file; never restate what the code plainly says.
 
 ### 10.2 Things that must always be documented

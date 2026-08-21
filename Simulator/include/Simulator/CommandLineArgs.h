@@ -33,10 +33,14 @@ enum class RunMode { Comparative, Competition };
  *       `mission_control_folder` in comparative mode, `algorithms_folder` in competitive mode.
  */
 struct CommandLineArgs {
-    /// Which mode was requested.
+    /**
+     * @brief Which mode was requested.
+     */
     RunMode mode = RunMode::Comparative;
 
-    /// The `simulation=` composition YAML.
+    /**
+     * @brief The `simulation=` composition YAML.
+     */
     std::filesystem::path composition_file{};
 
     /**
@@ -58,7 +62,11 @@ struct CommandLineArgs {
      */
     std::size_t num_threads = 1;
 
-    /// Whether `-verbose` was given.
+    /**
+     * @brief Whether `-verbose` was given.
+     * @note Flows through to `MissionControlDependencies::verbose`, which is the only place it is
+     *       acted on - the simulator itself has no verbose output of its own.
+     */
     bool verbose = false;
 };
 

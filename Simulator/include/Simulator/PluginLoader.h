@@ -11,9 +11,25 @@
 
 #include <filesystem>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace simulator {
+
+/**
+ * @brief List the shared objects sitting directly inside a folder.
+ * @param folder Directory to enumerate; not descended into.
+ * @param ec Set when the directory cannot be opened or traversed; cleared otherwise.
+ * @return The `.so` files found, in whatever order the filesystem reported them.
+ * @note Shared with `CommandLineArgs` validation, which needs to reject a plugin folder holding no
+ *       `.so` at all. Keeping one definition of "is this a plugin file" stops the loader and the
+ *       argument checker from ever disagreeing about what they are looking at.
+ * @note Returns raw, unsorted paths. `PluginLoader::collect` canonicalises, sorts, and
+ *       de-duplicates on top; validation only needs to know whether the result is empty.
+ * @note Never throws: the `std::error_code` overloads of `directory_iterator` are used throughout.
+ */
+[[nodiscard]] std::vector<std::filesystem::path> enumerateSharedObjects(
+    const std::filesystem::path& folder, std::error_code& ec);
 
 /**
  * @brief One successfully loaded mapping-algorithm plugin.

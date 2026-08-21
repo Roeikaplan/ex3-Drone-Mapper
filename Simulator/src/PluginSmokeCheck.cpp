@@ -8,6 +8,7 @@
 
 #include <Simulator/PluginSmokeCheck.h>
 
+#include <Simulator/ErrorLogger.h>
 #include <Simulator/PluginLoader.h>
 #include <Simulator/Registrar.h>
 
@@ -81,13 +82,15 @@ struct SmokeCheckContext {
  * @brief Build and exercise one instance of every loaded plugin.
  * @param report The plugins claimed by the loader.
  * @param context Dependencies that must outlive every instance created here.
+ * @param logger Sink for any factory that misbehaves.
  * @return True when every factory produced a usable instance.
  * @note Instances live only for this function. Returning before the caller clears the registrar and
  *       releases the libraries is exactly the ordering the whole design depends on.
  * @note Each mission control is handed the *first* loaded algorithm, so `runMission` crossing into
  *       `nextStep` proves the full host to MissionControl `.so` to Algorithm `.so` call chain.
  */
-[[nodiscard]] bool exercisePlugins(const PluginLoadReport& report, SmokeCheckContext& context) {
+[[nodiscard]] bool exercisePlugins(const PluginLoadReport& report, SmokeCheckContext& context,
+                                   ErrorLogger& logger) {
     bool all_ok = true;
 
     std::vector<std::unique_ptr<common::IMappingAlgorithm>> algorithms;
@@ -96,7 +99,8 @@ struct SmokeCheckContext {
             loaded.factory(common::MappingAlgorithmDependencies{
                 context.mission_config, context.lidar_config, context.drone_config, context.map});
         if (!instance) {
-            std::cout << "  " << loaded.file.filename().string() << " -> factory returned null\n";
+            logger.log("PLUGIN_FACTORY_NULL",
+                       loaded.file.string() + ": algorithm factory returned null");
             all_ok = false;
             continue;
         }
@@ -108,7 +112,8 @@ struct SmokeCheckContext {
     }
 
     if (algorithms.empty() && !report.mission_controls.empty()) {
-        std::cout << "  no algorithm instance available; mission controls cannot be exercised\n";
+        logger.log("PLUGIN_SET_INCOMPLETE",
+                   "no algorithm instance available; mission controls cannot be exercised");
         return false;
     }
 
@@ -124,7 +129,8 @@ struct SmokeCheckContext {
                                                               std::filesystem::path{},
                                                               false});
         if (!instance) {
-            std::cout << "  " << loaded.file.filename().string() << " -> factory returned null\n";
+            logger.log("PLUGIN_FACTORY_NULL",
+                       loaded.file.string() + ": mission control factory returned null");
             all_ok = false;
             continue;
         }
@@ -139,8 +145,19 @@ struct SmokeCheckContext {
 
 } // namespace
 
+/**
+ * @brief Load, instantiate, exercise, and tear down every plugin in two folders.
+ * @param algorithms_dir Folder (or single `.so`) holding mapping-algorithm plugins.
+ * @param mission_controls_dir Folder (or single `.so`) holding mission-control plugins.
+ * @param logger Sink for every failure encountered.
+ * @return 0 when every plugin loaded, registered, and ran; 1 when anything failed.
+ * @note The four teardown steps below are the reason this function exists at all, and they run on
+ *       every path including the failure ones - which is why the plugin call is wrapped rather than
+ *       allowed to propagate out.
+ */
 int runPluginSmokeCheck(const std::filesystem::path& algorithms_dir,
-                        const std::filesystem::path& mission_controls_dir) {
+                        const std::filesystem::path& mission_controls_dir,
+                        ErrorLogger& logger) {
     PluginLoader loader;
     bool ok = true;
 
@@ -157,26 +174,26 @@ int runPluginSmokeCheck(const std::filesystem::path& algorithms_dir,
                   << " mission_controls=" << report.mission_controls.size()
                   << " failures=" << report.failures.size() << "\n";
         for (const PluginFailure& failure : report.failures) {
-            std::cout << "  FAILED " << failure.file.string() << ": " << failure.reason << "\n";
+            logger.log("PLUGIN_LOAD_FAILED", failure.file.string() + ": " + failure.reason);
             ok = false;
         }
         if (report.algorithms.empty() || report.mission_controls.empty()) {
-            std::cout << "  expected at least one plugin of each kind\n";
+            logger.log("PLUGIN_SET_INCOMPLETE", "expected at least one plugin of each kind");
             ok = false;
         }
 
         SmokeCheckContext context;
         try {
-            ok = exercisePlugins(report, context) && ok;
+            ok = exercisePlugins(report, context, logger) && ok;
         } catch (const std::exception& error) {
             /**
              * @note A plugin's own code runs inside `exercisePlugins`. An exception escaping it
              *       must not skip the teardown below, so it is caught here rather than at `main`.
              */
-            std::cout << "  plugin threw: " << error.what() << "\n";
+            logger.log("PLUGIN_THREW", std::string{"plugin threw: "} + error.what());
             ok = false;
         } catch (...) {
-            std::cout << "  plugin threw a non-standard exception\n";
+            logger.log("PLUGIN_THREW", "plugin threw a non-standard exception");
             ok = false;
         }
     }

@@ -57,6 +57,35 @@ namespace fs = std::filesystem;
 } // namespace
 
 /**
+ * @brief List the shared objects sitting directly inside a folder.
+ * @param folder Directory to enumerate; not descended into.
+ * @param ec Set when the directory cannot be opened or traversed; cleared otherwise.
+ * @return The `.so` files found, in whatever order the filesystem reported them.
+ * @note Non-recursive by design: the assignment's folder arguments name a flat directory of a team's
+ *       libraries, and descending into it would pick up unrelated build output.
+ * @note An entry that cannot be stat'ed is skipped rather than failing the whole listing, so one
+ *       unreadable file does not hide every usable plugin beside it.
+ */
+std::vector<fs::path> enumerateSharedObjects(const fs::path& folder, std::error_code& ec) {
+    std::vector<fs::path> files;
+
+    ec.clear();
+    const fs::directory_iterator entries{folder, ec};
+    if (ec) {
+        return files;
+    }
+
+    for (const fs::directory_entry& entry : entries) {
+        std::error_code entry_ec;
+        if (entry.is_regular_file(entry_ec) && isSharedObject(entry.path())) {
+            files.push_back(entry.path());
+        }
+    }
+
+    return files;
+}
+
+/**
  * @brief Load every plugin at a path and claim what each one registers.
  * @param file_or_folder A single `.so`, or a folder to enumerate non-recursively.
  * @param expected The kind the caller requires; anything else is recorded as a failure.
@@ -93,23 +122,21 @@ std::vector<fs::path> PluginLoader::collect(const fs::path& file_or_folder,
         return files;
     }
 
-    std::error_code iter_ec;
-    const fs::directory_iterator entries{file_or_folder, iter_ec};
-    if (iter_ec) {
+    std::error_code list_ec;
+    files = enumerateSharedObjects(file_or_folder, list_ec);
+    if (list_ec) {
         report.failures.push_back(
-            {file_or_folder, "directory could not be traversed: " + iter_ec.message()});
+            {file_or_folder, "directory could not be traversed: " + list_ec.message()});
+        files.clear();
         return files;
     }
 
     /**
-     * @note Non-recursive by design: the assignment's folder arguments name a flat directory of a
-     *       team's libraries, and descending into it would pick up unrelated build output.
+     * @note Canonicalisation happens here rather than inside `enumerateSharedObjects` because only
+     *       the loader needs it - argument validation just counts what is present.
      */
-    for (const fs::directory_entry& entry : entries) {
-        std::error_code entry_ec;
-        if (entry.is_regular_file(entry_ec) && isSharedObject(entry.path())) {
-            files.push_back(canonicalOrSelf(entry.path()));
-        }
+    for (fs::path& file : files) {
+        file = canonicalOrSelf(file);
     }
 
     /**

@@ -4,11 +4,14 @@
 
 add_executable(simulator_323998450_211633813
     src/main.cpp
+    src/CommandLineArgs.cpp
+    src/ErrorLogger.cpp
     src/PluginLibrary.cpp
     src/PluginLoader.cpp
     src/PluginSmokeCheck.cpp
     src/Registrar.cpp
     src/RegistrationEntryPoints.cpp
+    src/ResultsDirectory.cpp
 )
 
 target_include_directories(simulator_323998450_211633813
@@ -67,3 +70,43 @@ drone_fixture_plugin(StubMissionControl_B tests/fixtures/StubMissionControl.cpp 
 # axis comparative grouping keys on: same source, different observable behaviour.
 target_compile_definitions(StubMissionControl_A PRIVATE STUB_MC_STEPS=1)
 target_compile_definitions(StubMissionControl_B PRIVATE STUB_MC_STEPS=2)
+
+# ---------------------------------------------------------------------------------------------
+# Unit tests.
+#
+# CommandLineArgs has no dependency on the plugin machinery, so its test compiles the one source
+# under test directly. That deliberately avoids moving the Simulator's sources into a static
+# library: RegistrationEntryPoints.cpp is referenced by nothing in the executable - only by plugins
+# at dlopen time - so an archive would let the linker drop it and the registration symbol would
+# silently vanish from .dynsym, breaking plugin loading with no build error.
+# ---------------------------------------------------------------------------------------------
+
+include(GoogleTest)
+
+add_executable(simulator_unit_test
+    tests/CommandLineArgsTest.cpp
+    tests/ErrorLoggerTest.cpp
+    tests/ResultsDirectoryTest.cpp
+    src/CommandLineArgs.cpp
+    src/ErrorLogger.cpp
+    src/PluginLibrary.cpp
+    src/PluginLoader.cpp
+    src/Registrar.cpp
+    src/ResultsDirectory.cpp
+)
+
+target_include_directories(simulator_unit_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/common_simulator/include
+)
+
+target_link_libraries(simulator_unit_test
+    PRIVATE
+        common::common
+        GTest::gtest_main
+        ${CMAKE_DL_LIBS}
+)
+
+drone_warnings(simulator_unit_test)
+gtest_discover_tests(simulator_unit_test)

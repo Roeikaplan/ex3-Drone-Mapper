@@ -14,10 +14,13 @@
 
 #include <Common/IMappingAlgorithm.h>
 #include <Common/IMissionControl.h>
+#include <Common/IMutableMap3D.h>
 #include <Common/MissionControlFactory.h>
 #include <Common/MissionControlRegistration.h>
 
 #include <cstddef>
+#include <filesystem>
+#include <utility>
 
 #ifndef STUB_MC_STEPS
 /**
@@ -48,7 +51,9 @@ public:
      *       everything else is unused by this fixture.
      */
     explicit StubMissionControl(common::MissionControlDependencies dependencies)
-        : mapping_algorithm_(dependencies.mapping_algorithm) {}
+        : mapping_algorithm_(dependencies.mapping_algorithm),
+          output_map_(dependencies.output_map),
+          output_map_file_(std::move(dependencies.output_map_file)) {}
 
     /**
      * @brief Run the mission.
@@ -62,6 +67,15 @@ public:
     [[nodiscard]] common::types::MissionRunResult runMission() override {
         const common::types::MappingStepCommand command =
             mapping_algorithm_.nextStep(common::types::DroneState{}, nullptr);
+
+        /**
+         * @note Saving the output map is the mission control's job, which is why the host hands it
+         *       a path rather than saving on its way out. A mission that never saves leaves the
+         *       results folder empty even though every run "succeeded".
+         */
+        if (!output_map_file_.empty()) {
+            output_map_.save(output_map_file_);
+        }
 
         common::types::MissionRunResult result{};
         result.status = command.status == common::types::AlgorithmStatus::Working
@@ -78,6 +92,18 @@ private:
      *       mission control constructed against it.
      */
     common::IMappingAlgorithm& mapping_algorithm_;
+
+    /**
+     * @brief The map this mission is expected to fill in and save.
+     * @note Non-owning, and owned by the run rather than by this plugin.
+     */
+    common::IMutableMap3D& output_map_;
+
+    /**
+     * @brief Where the host wants the finished map written.
+     * @note Empty when the host did not ask for a file, as the unit tests do not.
+     */
+    std::filesystem::path output_map_file_;
 };
 
 } // namespace fixtures

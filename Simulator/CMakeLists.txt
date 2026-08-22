@@ -6,6 +6,7 @@ add_executable(simulator_323998450_211633813
     src/main.cpp
     src/CommandLineArgs.cpp
     src/CompositionLoader.cpp
+    src/ConfigIdentityIndex.cpp
     src/ErrorLogger.cpp
     src/Map3DImpl.cpp
     src/MapsComparison.cpp
@@ -14,10 +15,14 @@ add_executable(simulator_323998450_211633813
     src/MockMovement.cpp
     src/PluginLibrary.cpp
     src/PluginLoader.cpp
-    src/PluginSmokeCheck.cpp
     src/Registrar.cpp
     src/RegistrationEntryPoints.cpp
     src/ResultsDirectory.cpp
+    src/SimulationManager.cpp
+    src/SimulationOutputWriter.cpp
+    src/SimulationRunFactoryImpl.cpp
+    src/SimulationRunImpl.cpp
+    src/UtcTime.cpp
 )
 
 target_include_directories(simulator_323998450_211633813
@@ -97,8 +102,11 @@ add_executable(simulator_unit_test
     tests/MapsComparisonTest.cpp
     tests/MocksTest.cpp
     tests/ResultsDirectoryTest.cpp
+    tests/SimulationOutputWriterTest.cpp
+    tests/SimulationPipelineTest.cpp
     src/CommandLineArgs.cpp
     src/CompositionLoader.cpp
+    src/ConfigIdentityIndex.cpp
     src/ErrorLogger.cpp
     src/Map3DImpl.cpp
     src/MapsComparison.cpp
@@ -109,6 +117,11 @@ add_executable(simulator_unit_test
     src/PluginLoader.cpp
     src/Registrar.cpp
     src/ResultsDirectory.cpp
+    src/SimulationManager.cpp
+    src/SimulationOutputWriter.cpp
+    src/SimulationRunFactoryImpl.cpp
+    src/SimulationRunImpl.cpp
+    src/UtcTime.cpp
 )
 
 target_include_directories(simulator_unit_test

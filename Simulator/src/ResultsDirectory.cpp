@@ -5,7 +5,8 @@
 
 #include <Simulator/ResultsDirectory.h>
 
-#include <ctime>
+#include <Simulator/UtcTime.h>
+
 #include <system_error>
 
 namespace simulator {
@@ -17,28 +18,6 @@ namespace {
  *       failing with a message beats spinning forever inside a program that must always finish.
  */
 constexpr int kMaxAttempts = 1000;
-
-/**
- * @brief The current UTC time as a compact stamp.
- * @return The time formatted `YYYYMMDD_HHMMSS`, or an empty string if formatting failed.
- * @note UTC rather than local time, to match the `generated_at_utc` field the reports carry, so a
- *       directory name and the report inside it never appear to disagree about when a run happened.
- * @note `gmtime_r` is POSIX. That is fine for this project, which targets the course's Linux
- *       container; a portable build would need `gmtime_s` on Windows.
- * @note Phase 07's report writers need an ISO-8601 variant of this. That is the point at which the
- *       two should be factored into a shared time helper rather than duplicated.
- */
-[[nodiscard]] std::string utcStamp() {
-    const std::time_t now = std::time(nullptr);
-    std::tm utc{};
-    if (::gmtime_r(&now, &utc) == nullptr) {
-        return {};
-    }
-
-    char buffer[32] = {};
-    const std::size_t written = std::strftime(buffer, sizeof(buffer), "%Y%m%d_%H%M%S", &utc);
-    return written == 0 ? std::string{} : std::string(buffer, written);
-}
 
 /**
  * @brief The directory-name prefix for a run mode.
@@ -84,7 +63,7 @@ constexpr int kMaxAttempts = 1000;
 ResultsDirectory createResultsDirectory(const CommandLineArgs& args) {
     ResultsDirectory result{};
 
-    const std::string stamp = utcStamp();
+    const std::string stamp = utcCompactStamp();
     if (stamp.empty()) {
         result.error = "could not format a timestamp for the results directory name";
         return result;

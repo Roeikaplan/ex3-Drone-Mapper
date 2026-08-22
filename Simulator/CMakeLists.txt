@@ -5,7 +5,13 @@
 add_executable(simulator_323998450_211633813
     src/main.cpp
     src/CommandLineArgs.cpp
+    src/CompositionLoader.cpp
     src/ErrorLogger.cpp
+    src/Map3DImpl.cpp
+    src/MapsComparison.cpp
+    src/MockGPS.cpp
+    src/MockLidar.cpp
+    src/MockMovement.cpp
     src/PluginLibrary.cpp
     src/PluginLoader.cpp
     src/PluginSmokeCheck.cpp
@@ -85,10 +91,20 @@ include(GoogleTest)
 
 add_executable(simulator_unit_test
     tests/CommandLineArgsTest.cpp
+    tests/CompositionLoaderTest.cpp
     tests/ErrorLoggerTest.cpp
+    tests/Map3DImplTest.cpp
+    tests/MapsComparisonTest.cpp
+    tests/MocksTest.cpp
     tests/ResultsDirectoryTest.cpp
     src/CommandLineArgs.cpp
+    src/CompositionLoader.cpp
     src/ErrorLogger.cpp
+    src/Map3DImpl.cpp
+    src/MapsComparison.cpp
+    src/MockGPS.cpp
+    src/MockLidar.cpp
+    src/MockMovement.cpp
     src/PluginLibrary.cpp
     src/PluginLoader.cpp
     src/Registrar.cpp
@@ -104,8 +120,17 @@ target_include_directories(simulator_unit_test
 target_link_libraries(simulator_unit_test
     PRIVATE
         common::common
+        yaml-cpp::yaml-cpp
+        TinyNPY::TinyNPY
         GTest::gtest_main
         ${CMAKE_DL_LIBS}
+)
+
+# Integration-style cases read the shipped inputs/ dataset by absolute path, so they behave the same
+# whatever working directory ctest happens to launch them from.
+target_compile_definitions(simulator_unit_test
+    PRIVATE
+        DRONE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
 
 drone_warnings(simulator_unit_test)

@@ -11,12 +11,18 @@
  */
 
 #include <Simulator/CommandLineArgs.h>
+#include <Simulator/CompositionLoader.h>
 #include <Simulator/ErrorLogger.h>
+#include <Simulator/Map3DImpl.h>
 #include <Simulator/PluginSmokeCheck.h>
 #include <Simulator/ResultsDirectory.h>
 
+#include <cstddef>
+#include <exception>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -56,6 +62,58 @@ void reportConfiguration(const simulator::CommandLineArgs& args,
     std::cout << "results=" << results_directory.string() << "\n";
 }
 
+/**
+ * @brief Echo what the composition file turned out to contain.
+ * @param composition The parsed composition.
+ * @note One line rather than a dump: enough to notice at a glance that the wrong dataset was named,
+ *       without burying the run's real output.
+ */
+void reportComposition(const simulator::types::SimulationCompositionData& composition) {
+    std::size_t pairs = 0;
+    for (const auto& group : composition.simulation_mission_groups) {
+        pairs += std::get<1>(group).size();
+    }
+    std::cout << "simulations=" << composition.simulation_mission_groups.size()
+              << " pairs=" << pairs << " drones=" << composition.drone_configs.size()
+              << " lidars=" << composition.lidar_configs.size() << "\n";
+}
+
+/**
+ * @brief Load the first simulation's ground-truth map and report its geometry.
+ * @param composition The parsed composition.
+ * @param logger Sink for a map that cannot be read.
+ * @note Transitional, and deliberately so. The run factory loads a map per run from phase 04
+ *       onward; until then this is what exercises `Map3DImpl` against a real `.npy` on every
+ *       invocation, so a broken reader or a mis-resolved `map_filename` shows up immediately rather
+ *       than only under ctest.
+ * @note `loadArray` throws by design - `IMutableMap3D::save` returns `void`, so exceptions are the
+ *       only failure channel the frozen interface leaves - and this is one of the places that has to
+ *       catch, because a bad map file must not end the program.
+ */
+void reportHiddenMap(const simulator::types::SimulationCompositionData& composition,
+                     simulator::ErrorLogger& logger) {
+    if (composition.simulation_mission_groups.empty()) {
+        return;
+    }
+
+    const simulator::types::SimulationConfigData& simulation =
+        std::get<0>(composition.simulation_mission_groups.front());
+    try {
+        const std::shared_ptr<NpyArray> array =
+            simulator::Map3DImpl::loadArray(simulation.map_filename);
+        const NpyArray::shape_t& shape = array->Shape();
+        std::cout << "hidden_map=" << simulation.map_filename.filename().string() << " "
+                  << shape[0] << "x" << shape[1] << "x" << shape[2] << " @"
+                  << simulation.map_resolution.force_numerical_value_in(common::cm) << "cm"
+                  << " offset=(" << simulation.map_offset.x.force_numerical_value_in(common::cm)
+                  << "," << simulation.map_offset.y.force_numerical_value_in(common::cm) << ","
+                  << simulation.map_offset.z.force_numerical_value_in(common::cm) << ")\n";
+    } catch (const std::exception& error) {
+        logger.log("MAP_LOAD_FAILED",
+                   simulation.map_filename.string() + ": " + std::string{error.what()});
+    }
+}
+
 } // namespace
 
 /**
@@ -90,6 +148,20 @@ int main(int argc, char** argv) {
 
     simulator::ErrorLogger logger{results.path / "errors.log"};
     reportConfiguration(args, results.path);
+
+    /**
+     * @note Loaded after the logger exists, because every defect it recovers from is reported
+     *       through that logger rather than returned.
+     */
+    simulator::CompositionPaths composition_paths;
+    const simulator::CompositionLoadResult composition =
+        simulator::loadComposition(args.composition_file, logger, &composition_paths);
+    if (!composition.ok()) {
+        logger.log("COMPOSITION_LOAD_FAILED", composition.error);
+        return 0;
+    }
+    reportComposition(composition.composition);
+    reportHiddenMap(composition.composition, logger);
 
     const bool comparative = args.mode == simulator::RunMode::Comparative;
     const std::filesystem::path& algorithms =

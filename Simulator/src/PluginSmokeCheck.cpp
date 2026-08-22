@@ -12,12 +12,15 @@
 #include <Simulator/PluginLoader.h>
 #include <Simulator/Registrar.h>
 
+#include <Simulator/Map3DImpl.h>
+#include <Simulator/MockGPS.h>
+#include <Simulator/MockLidar.h>
+#include <Simulator/MockMovement.h>
+
 #include <Common/IMappingAlgorithm.h>
 #include <Common/IMissionControl.h>
 #include <Common/MappingAlgorithmFactory.h>
 #include <Common/MissionControlFactory.h>
-
-#include "NullSensors.h"
 
 #include <exception>
 #include <iostream>
@@ -62,20 +65,50 @@ namespace {
 }
 
 /**
+ * @brief Geometry for the throwaway world the smoke check flies in.
+ * @return A small cube of 1 cm voxels anchored at the origin.
+ * @note Deliberately tiny. The point is to hand the plugins a *real* map and sensors rather than
+ *       null objects, not to simulate anything - a full scenario map would make every run slow for
+ *       no extra proof.
+ */
+[[nodiscard]] common::types::MapConfig smokeCheckMapConfig() {
+    common::types::MapConfig config{};
+    config.resolution = 1.0 * common::cm;
+    config.boundaries.max_x = 10.0 * common::x_extent[common::cm];
+    config.boundaries.max_y = 10.0 * common::y_extent[common::cm];
+    config.boundaries.max_height = 10.0 * common::z_extent[common::cm];
+    return config;
+}
+
+/**
  * @brief Everything the plugins need in order to be constructed at all.
  *
  * @note Architectural boundary: `IMappingAlgorithm` copies the three configs into value members but
  *       holds `const IMap3D&` by reference, so the map must outlive every instance built from it.
  *       Bundling them here guarantees that, because this object is declared before the instances.
+ * @note Member declaration order is load-bearing, not cosmetic: `movement` holds a reference to
+ *       `gps` and `lidar` holds references to `map` and `gps`, and members initialise in
+ *       declaration order. Reordering these would bind references to objects that do not exist yet.
  */
 struct SmokeCheckContext {
+    /**
+     * @brief Build the world and the sensors that observe it.
+     */
+    SmokeCheckContext()
+        : map_config(smokeCheckMapConfig()),
+          map(Map3DImpl::makeEmptyArray(map_config), map_config),
+          gps(common::Position3D{}, common::Orientation{}, 1.0 * common::cm),
+          movement(gps),
+          lidar(lidar_config, map, gps) {}
+
     common::types::MissionConfigData mission_config{};
     common::types::LidarConfigData lidar_config{};
     common::types::DroneConfigData drone_config{};
-    NullMap3D map{};
-    NullGPS gps{};
-    NullMovement movement{};
-    NullLidar lidar{};
+    common::types::MapConfig map_config{};
+    Map3DImpl map;
+    MockGPS gps;
+    MockMovement movement;
+    MockLidar lidar;
 };
 
 /**

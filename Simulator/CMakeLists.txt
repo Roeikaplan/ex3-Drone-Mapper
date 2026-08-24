@@ -29,6 +29,7 @@ target_include_directories(simulator_323998450_211633813
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/common_simulator/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../UserCommon/include
 )
 
 target_link_libraries(simulator_323998450_211633813
@@ -92,8 +93,6 @@ target_compile_definitions(StubMissionControl_B PRIVATE STUB_MC_STEPS=2)
 # silently vanish from .dynsym, breaking plugin loading with no build error.
 # ---------------------------------------------------------------------------------------------
 
-include(GoogleTest)
-
 add_executable(simulator_unit_test
     tests/CommandLineArgsTest.cpp
     tests/CompositionLoaderTest.cpp
@@ -128,6 +127,7 @@ target_include_directories(simulator_unit_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/common_simulator/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../UserCommon/include
 )
 
 target_link_libraries(simulator_unit_test

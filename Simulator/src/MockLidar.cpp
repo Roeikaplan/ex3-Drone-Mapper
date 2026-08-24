@@ -9,6 +9,8 @@
 
 #include <Simulator/MockLidar.h>
 
+#include <UserCommon/BeamGeometry.h>
+
 #include <mp-units/systems/si/math.h>
 
 #include <cstddef>
@@ -17,14 +19,10 @@
 namespace simulator {
 namespace {
 
-namespace mp = mp_units;
 namespace si = mp_units::si;
 
 using common::cm;
 using common::deg;
-using common::x_extent;
-using common::y_extent;
-using common::z_extent;
 
 /**
  * @brief How many beams sit on one field-of-view circle.
@@ -102,10 +100,8 @@ common::types::LidarScanResult MockLidar::scan(common::Orientation scan_orientat
     }
 
     const common::Orientation sensor_heading = gps_.heading();
-    const common::Orientation centre_beam_absolute{
-        scan_orientation.horizontal + sensor_heading.horizontal,
-        scan_orientation.altitude + sensor_heading.altitude,
-    };
+    const common::Orientation centre_beam_absolute =
+        user_common::absoluteBeam(sensor_heading, scan_orientation);
 
     results.push_back(common::types::LidarHit{traceBeam(centre_beam_absolute), scan_orientation});
 
@@ -123,10 +119,8 @@ common::types::LidarScanResult MockLidar::scan(common::Orientation scan_orientat
                 scan_orientation.horizontal + horizontalDelta(horizontal_offset, config_.z_min),
                 scan_orientation.altitude + altitudeDelta(altitude_offset, config_.z_min),
             };
-            const common::Orientation absolute_beam{
-                relative_beam.horizontal + sensor_heading.horizontal,
-                relative_beam.altitude + sensor_heading.altitude,
-            };
+            const common::Orientation absolute_beam =
+                user_common::absoluteBeam(sensor_heading, relative_beam);
 
             results.push_back(common::types::LidarHit{traceBeam(absolute_beam), relative_beam});
         }
@@ -150,25 +144,11 @@ common::types::LidarScanResult MockLidar::scan(common::Orientation scan_orientat
  */
 common::PhysicalLength MockLidar::traceBeam(const common::Orientation& beam_orientation) const {
     const common::Position3D origin = gps_.position();
-
-    const auto cos_altitude = si::cos(beam_orientation.altitude);
-    const auto dx = cos_altitude * si::cos(beam_orientation.horizontal);
-    const auto dy = cos_altitude * si::sin(beam_orientation.horizontal);
-    const auto dz = si::sin(beam_orientation.altitude);
-
     const common::PhysicalLength step = 0.1 * map_.getMapConfig().resolution;
 
     for (common::PhysicalLength distance = 0.0 * cm; distance <= config_.z_max; distance += step) {
-        const double distance_cm = distance.force_numerical_value_in(cm);
-        const double dir_x = dx.force_numerical_value_in(mp::one);
-        const double dir_y = dy.force_numerical_value_in(mp::one);
-        const double dir_z = dz.force_numerical_value_in(mp::one);
-
-        const common::Position3D sample{
-            origin.x + dir_x * distance_cm * x_extent[cm],
-            origin.y + dir_y * distance_cm * y_extent[cm],
-            origin.z + dir_z * distance_cm * z_extent[cm],
-        };
+        const common::Position3D sample =
+            user_common::pointAlongBeam(origin, beam_orientation, distance);
 
         if (map_.atVoxel(sample) == common::types::VoxelOccupancy::Occupied) {
             /**

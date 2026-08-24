@@ -623,11 +623,32 @@ equality. Candidate definitions, cheapest first:
 **Leaning toward (1)**, with (2) as a refinement if it proves too coarse. Whatever we choose gets
 documented in `README.md`.
 
-### 8.3 `UserCommon/` — create it, and with what in it?
+### 8.3 ~~`UserCommon/` — create it, and with what in it?~~ — RESOLVED (phase 05)
 
-It does not exist yet. Strongest candidate content is the world↔voxel geometry used by both
-`MockLidar` (Simulator) and `ScanResultToVoxels` (MissionControl). Decide once the first genuine
-cross-project duplication appears rather than speculatively.
+Created with `UserCommon/include/UserCommon/BeamGeometry.h`, header-only and therefore build-file
+free. It holds `pointAlongBeam` and `absoluteBeam` — the orientation-to-direction math with three
+call sites across two projects: `MockLidar::traceBeam` and `MockMovement::advance` on the Simulator
+side, and `ScanResultToVoxels` inside the MissionControl plugin. The angle convention
+(`0° = +X east`, `90° = +Y south`) is now stated in exactly one place.
+
+Both projects add `../UserCommon/include` to their include path; nothing else changed.
+
+### 8.7 Drone radius is not enforced — DEFERRED, deliberately
+
+`DroneConfigData::radius` (4 cm for `drone_small`, 7.5 cm for `drone_large`) is parsed and stored but
+**never used**. The drone is validated as a dimensionless point, so it can pass within less than its
+own radius of a known wall. Assignment 2 had the same gap.
+
+`DroneControlImpl` does check the **whole swept path** rather than only the destination — a 30 cm
+advance over a 5 cm grid crosses six voxels, and an endpoint-only check would let a drone fly clean
+through a known wall. That fix landed in phase 05. What is still missing is clearance for the
+drone's own body.
+
+Deliberately left for now. If revisited, the options are to widen the sweep to a sphere of `radius`
+(correct but ~27× the lookups, and it may refuse gaps the algorithm deliberately planned through) or
+to make the mapping algorithm keep clearance while planning, leaving this as a point-path backstop.
+The second is more natural — clearance is a planning concern — but it is weaker in competitive mode,
+where our MissionControl runs against other teams' algorithms.
 
 ### 8.4 External libraries vs. the submission rules
 

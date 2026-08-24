@@ -26,7 +26,7 @@ struct CompositionLoadResult {
      * @brief The parsed composition.
      * @note Meaningful only when `ok()`; otherwise default-constructed.
      */
-    types::SimulationCompositionData composition{};
+types::SimulationCompositionData composition{};
 
     /**
      * @brief Why the file could not be loaded at all.

@@ -14,6 +14,12 @@ find_package(GTest CONFIG REQUIRED)       # targets: GTest::gtest_main, GTest::g
 # Test targets themselves arrive with the code they test, starting in phase 02.
 enable_testing()
 
+# GoogleTest's helpers must be included before any subdirectory that uses them. Subprojects are
+# added in dependency order below, so a per-subdirectory include() would only be visible to the
+# subdirectories processed after it - which is how MissionControl ended up unable to see
+# gtest_discover_tests despite Simulator including it.
+include(GoogleTest)
+
 # Both plugin kinds are enumerated as *folders* by the simulator's two run modes, so each kind
 # gets its own output folder that -comparative / -competition can be pointed straight at.
 set(DRONE_PLUGIN_OUTPUT_ROOT "${CMAKE_BINARY_DIR}/plugins")

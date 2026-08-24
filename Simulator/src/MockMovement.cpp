@@ -8,17 +8,13 @@
 
 #include <Simulator/MockMovement.h>
 
-#include <mp-units/systems/si/math.h>
+#include <UserCommon/BeamGeometry.h>
 
 namespace simulator {
 namespace {
 
-namespace mp = mp_units;
-namespace si = mp_units::si;
-
 using common::cm;
-using common::x_extent;
-using common::y_extent;
+using common::deg;
 using common::z_extent;
 
 } // namespace
@@ -58,18 +54,17 @@ common::types::MovementResult MockMovement::rotate(common::types::RotationDirect
  *       re-attach the per-axis quantity spec.
  */
 common::types::MovementResult MockMovement::advance(common::PhysicalLength distance) {
-    const common::Position3D position = gps_.position();
     const common::Orientation heading = gps_.heading();
 
-    const double cos_h = si::cos(heading.horizontal).force_numerical_value_in(mp::one);
-    const double sin_h = si::sin(heading.horizontal).force_numerical_value_in(mp::one);
-    const double distance_cm = distance.force_numerical_value_in(cm);
-
-    gps_.setPosition(common::Position3D{
-        position.x + cos_h * distance_cm * x_extent[cm],
-        position.y + sin_h * distance_cm * y_extent[cm],
-        position.z,
-    });
+    /**
+     * @note Altitude is held level rather than taken from the heading: horizontal travel belongs to
+     *       this primitive and vertical travel to `elevate`. Reusing the beam helper with a level
+     *       orientation is what keeps this identical to the prediction the mission control's drone
+     *       controller makes before allowing the move.
+     */
+    gps_.setPosition(user_common::pointAlongBeam(
+        gps_.position(), common::Orientation{heading.horizontal, 0.0 * common::altitude_angle[deg]},
+        distance));
     return common::types::MovementResult{true, {}};
 }
 

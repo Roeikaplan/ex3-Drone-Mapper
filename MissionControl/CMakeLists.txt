@@ -3,13 +3,17 @@
 # is PRIVATE - IDroneControl.h is internal to this subsystem and must not propagate.
 
 add_library(MissionControl_323998450_211633813 SHARED
-    src/Placeholder.cpp
+    src/DroneControlImpl.cpp
+    src/MissionControlImpl.cpp
+    src/MissionControlRegistration.cpp
+    src/ScanResultToVoxels.cpp
 )
 
 target_include_directories(MissionControl_323998450_211633813
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/common_mission_control/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../UserCommon/include
 )
 
 target_link_libraries(MissionControl_323998450_211633813
@@ -25,3 +29,36 @@ set_target_properties(MissionControl_323998450_211633813 PROPERTIES
 )
 
 drone_warnings(MissionControl_323998450_211633813)
+
+# ---------------------------------------------------------------------------------------------
+# Unit tests.
+#
+# A target of its own rather than a home in simulator_unit_test: these classes live in a different
+# project and link only common::common, so the simulator's test binary cannot reach them. Their
+# fakes are hand-written for the same reason - Map3DImpl is Simulator-side and off limits here.
+# ---------------------------------------------------------------------------------------------
+
+add_executable(mission_control_unit_test
+    tests/ScanResultToVoxelsTest.cpp
+    tests/DroneControlTest.cpp
+    tests/MissionControlTest.cpp
+    src/DroneControlImpl.cpp
+    src/MissionControlImpl.cpp
+    src/ScanResultToVoxels.cpp
+)
+
+target_include_directories(mission_control_unit_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/common_mission_control/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../UserCommon/include
+)
+
+target_link_libraries(mission_control_unit_test
+    PRIVATE
+        common::common
+        GTest::gtest_main
+)
+
+drone_warnings(mission_control_unit_test)
+gtest_discover_tests(mission_control_unit_test)

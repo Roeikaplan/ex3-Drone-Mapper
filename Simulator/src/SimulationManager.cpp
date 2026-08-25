@@ -1,6 +1,6 @@
 /**
  * @file SimulationManager.cpp
- * @brief The four-deep expansion, its failure containment, and the report it assembles.
+ * @brief The four-deep expansion, per-cell failure containment, and report assembly.
  */
 
 #include <Simulator/SimulationManager.h>
@@ -52,8 +52,7 @@ constexpr double kErrorScore = -1.0;
  * @param plugin_label Name of the plugin the run used.
  * @param result The run's assembled result.
  * @note Covers what a run reports by *status* rather than by throwing: mission-level errors carried
- *       in the result, and a resolution request the factory could not honour. Called the moment
- *       `run()` returns so the log is never deferred to the end of the batch.
+ *       in the result, and a resolution request the factory could not honour.
  */
 void logRunOutcome(ErrorLogger& logger, const std::string& plugin_label,
                    const types::SimulationResult& result) {
@@ -91,55 +90,102 @@ SimulationManager::SimulationManager(std::unique_ptr<ISimulationRunFactory> run_
 }
 
 /**
- * @brief Run every combination the composition describes.
+ * @brief Append this plugin's runs to a table.
  * @param composition Simulations with their missions, crossed with drones and lidars.
  * @param output_path Directory each run writes its output map into.
- * @return One result per combination, in expansion order, plus report metadata.
- * @note Each combination is wrapped individually. A bad map file throws for every combination of the
- *       affected simulation, which fills the sentinel across that whole group without the loop
- *       needing to special-case it.
- * @note `catch (...)` is present because plugin code runs inside `run()`. An exception escaping a
- *       third-party plugin must not end the batch, and it must not skip the remaining combinations.
+ * @param table Table to append to.
+ * @note Pointers rather than copies: the cells refer into the composition, which the caller keeps
+ *       alive. Copying four configs per cell would also break `ConfigIdentityIndex`, which resolves
+ *       a config's source filename by its address.
  */
-types::SimulationManagerReport SimulationManager::run(
-    const types::SimulationCompositionData& composition,
-    const std::filesystem::path& output_path) {
-    std::vector<types::SimulationResult> runs;
+void SimulationManager::enumerate(const types::SimulationCompositionData& composition,
+                                  const std::filesystem::path& output_path,
+                                  SimulationTaskTable& table) {
+    const std::size_t begin = table.size();
 
     for (const auto& group : composition.simulation_mission_groups) {
         const types::SimulationConfigData& simulation = std::get<0>(group);
         for (const common::types::MissionConfigData& mission : std::get<1>(group)) {
             for (const common::types::DroneConfigData& drone : composition.drone_configs) {
                 for (const common::types::LidarConfigData& lidar : composition.lidar_configs) {
-                    try {
-                        std::unique_ptr<ISimulationRun> run =
-                            run_factory_->create(simulation, mission, drone, lidar, output_path);
-                        types::SimulationResult result = run->run();
-                        logRunOutcome(logger_, plugin_label_, result);
-                        runs.push_back(std::move(result));
-                    } catch (const std::exception& error) {
-                        logger_.log("RUN_FAILED", plugin_label_ + ": run could not be executed: " +
-                                                      std::string{error.what()});
-                        runs.push_back(makeErrorResult(simulation, mission, error.what()));
-                    } catch (...) {
-                        logger_.log("RUN_FAILED",
-                                    plugin_label_ + ": run failed with a non-standard exception");
-                        runs.push_back(
-                            makeErrorResult(simulation, mission, "non-standard exception"));
-                    }
+                    table.append(RunCell{run_factory_.get(), &simulation, &mission, &drone, &lidar,
+                                         output_path});
                 }
             }
         }
     }
 
+    table.closePluginRange(begin);
+}
+
+/**
+ * @brief Execute one cell and record its outcome.
+ * @param table Table holding the cell and its result slot.
+ * @param index Which cell to run.
+ * @note A bad map file throws for every combination of the affected simulation, which fills the
+ *       sentinel across that whole group without the caller needing to special-case it.
+ * @note `catch (...)` is present because plugin code runs inside `run()`. An exception escaping a
+ *       third-party plugin must not end the batch - and once execution is concurrent, must not reach
+ *       a worker's boundary at all.
+ */
+void SimulationManager::runCell(SimulationTaskTable& table, std::size_t index) {
+    const RunCell& cell = table.cell(index);
+
+    try {
+        std::unique_ptr<ISimulationRun> run = cell.factory->create(
+            *cell.simulation, *cell.mission, *cell.drone, *cell.lidar, cell.output_path);
+        types::SimulationResult result = run->run();
+        logRunOutcome(logger_, plugin_label_, result);
+        table.result(index) = std::move(result);
+    } catch (const std::exception& error) {
+        logger_.log("RUN_FAILED",
+                    plugin_label_ + ": run could not be executed: " + std::string{error.what()});
+        table.result(index) = makeErrorResult(*cell.simulation, *cell.mission, error.what());
+    } catch (...) {
+        logger_.log("RUN_FAILED", plugin_label_ + ": run failed with a non-standard exception");
+        table.result(index) =
+            makeErrorResult(*cell.simulation, *cell.mission, "non-standard exception");
+    }
+}
+
+/**
+ * @brief Turn this plugin's results into its report.
+ * @param composition The composition the runs came from, for the report's metadata.
+ * @param results One plugin's results, in expansion order.
+ * @return The assembled report.
+ */
+types::SimulationManagerReport SimulationManager::assemble(
+    const types::SimulationCompositionData& composition,
+    std::vector<types::SimulationResult> results) const {
     types::SimulationManagerReport report{};
     report.composition_file = composition.composition_file;
     report.generated_at_utc = utcIso8601();
     report.metric = "occupied_voxel_iou";
     report.score_range = {0.0, 100.0};
     report.error_score = static_cast<int>(kErrorScore);
-    report.runs = std::move(runs);
+    report.runs = std::move(results);
     return report;
+}
+
+/**
+ * @brief Run every combination the composition describes.
+ * @param composition Simulations with their missions, crossed with drones and lidars.
+ * @param output_path Directory each run writes its output map into.
+ * @return One result per combination, in expansion order, plus report metadata.
+ * @note The three steps composed at single-plugin scope, on the calling thread. This is what
+ *       `ISimulation` promises; a caller wanting a different schedule uses the steps directly.
+ */
+types::SimulationManagerReport SimulationManager::run(
+    const types::SimulationCompositionData& composition,
+    const std::filesystem::path& output_path) {
+    SimulationTaskTable table;
+    enumerate(composition, output_path, table);
+    table.seal();
+
+    InlineExecutor executor;
+    executor.forEach(table.size(), [this, &table](std::size_t index) { runCell(table, index); });
+
+    return assemble(composition, table.resultsForPlugin(0));
 }
 
 } // namespace simulator

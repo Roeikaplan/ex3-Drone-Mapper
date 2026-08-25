@@ -159,6 +159,12 @@ hitting `max_steps` unnecessarily. This is now feature-complete for one plugin p
 **Done when** — pointing competitive mode at a folder holding your real algorithm plus two
 deliberately-broken stubs produces a correct ranking and a correct `errors:` list.
 
+**Status: done.** Split in two. 07a shipped both report writers over the existing per-plugin loop;
+07b then restructured execution into `SimulationTaskTable` + `ITaskExecutor` + `SimulationOrchestrator`
+without changing a single byte of output. The restructure was verified by diffing a full competitive and
+a full comparative run against reports captured beforehand: all 96 output maps and both `errors.log`
+files identical, and the three YAML reports differing only in `generated_at_utc`.
+
 ---
 
 ### 08 — Threads: concurrency

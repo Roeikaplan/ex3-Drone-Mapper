@@ -611,17 +611,28 @@ Settled in favour of the skeleton `README.md`'s lowercase namespaces (`common`, 
 Full reasoning in [§2.2](#22-namespaces--decided-lowercase-common-algorithm-mission_control-simulator).
 The remaining naming blocker is the submitter-ID question in [§2.3](#23-submitter-ids--one-submitter-listed-solo-submission-not-yet-confirmed).
 
-### 8.2 Definition of `same_results` (comparative grouping)
+### 8.2 ~~Definition of `same_results` (comparative grouping)~~ — RESOLVED (phase 07)
 
-The PDF shows two groups with an identical `total_score` of 495, proving equality is **not** score
-equality. Candidate definitions, cheapest first:
+**Chosen: the ordered vector of per-run `(score, steps)` across the whole composition.** Two mission
+controls share a group only if they match run by run, in the manager's expansion order.
 
-1. The ordered vector of per-run `(score, steps)` across the whole composition.
-2. The above **plus** a digest of each output map.
-3. Full output-map equality only.
+The PDF's own sample rules out anything aggregate: it shows `total_score: 495` in two different
+groups, so equality cannot be score equality. Per-run `(score, steps)` is exact about what the report
+actually publishes, needs no new plumbing, and is testable with what already exists — the two shipped
+fixtures produce identical maps and identical scores but report 1 and 2 steps, so a correct
+implementation separates them and a score-only one does not.
 
-**Leaning toward (1)**, with (2) as a refinement if it proves too coarse. Whatever we choose gets
-documented in `README.md`.
+Group ordering is member count descending, with ties broken by the first member's name. The tiebreak
+does no reporting work; it exists so two runs over the same data produce byte-identical documents,
+which matters more once execution is concurrent.
+
+**The refinement, if it is ever needed**: append a digest of each output map, catching two mission
+controls that produce different maps yet identical scores and step counts. The cost is real —
+`SimulationResult` is frozen, so a digest needs a parallel side-channel threaded from
+`SimulationRunImpl` through the manager to the orchestrator, the same shape as `CompositionPaths`.
+Not built, because no observed case needs it.
+
+Documented in `README.md`, as the assignment asks.
 
 ### 8.3 ~~`UserCommon/` — create it, and with what in it?~~ — RESOLVED (phase 05)
 

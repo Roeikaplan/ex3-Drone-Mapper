@@ -10,6 +10,7 @@ add_executable(simulator_323998450_211633813
     src/ErrorLogger.cpp
     src/Map3DImpl.cpp
     src/MapsComparison.cpp
+    src/ModeReportWriters.cpp
     src/MockGPS.cpp
     src/MockLidar.cpp
     src/MockMovement.cpp
@@ -19,9 +20,12 @@ add_executable(simulator_323998450_211633813
     src/RegistrationEntryPoints.cpp
     src/ResultsDirectory.cpp
     src/SimulationManager.cpp
+    src/SimulationOrchestrator.cpp
     src/SimulationOutputWriter.cpp
     src/SimulationRunFactoryImpl.cpp
     src/SimulationRunImpl.cpp
+    src/SimulationTaskTable.cpp
+    src/TaskExecutor.cpp
     src/UtcTime.cpp
 )
 
@@ -100,15 +104,18 @@ add_executable(simulator_unit_test
     tests/Map3DImplTest.cpp
     tests/MapsComparisonTest.cpp
     tests/MocksTest.cpp
+    tests/ModeReportWritersTest.cpp
     tests/ResultsDirectoryTest.cpp
     tests/SimulationOutputWriterTest.cpp
     tests/SimulationPipelineTest.cpp
+    tests/TaskTableTest.cpp
     src/CommandLineArgs.cpp
     src/CompositionLoader.cpp
     src/ConfigIdentityIndex.cpp
     src/ErrorLogger.cpp
     src/Map3DImpl.cpp
     src/MapsComparison.cpp
+    src/ModeReportWriters.cpp
     src/MockGPS.cpp
     src/MockLidar.cpp
     src/MockMovement.cpp
@@ -117,9 +124,12 @@ add_executable(simulator_unit_test
     src/Registrar.cpp
     src/ResultsDirectory.cpp
     src/SimulationManager.cpp
+    src/SimulationOrchestrator.cpp
     src/SimulationOutputWriter.cpp
     src/SimulationRunFactoryImpl.cpp
     src/SimulationRunImpl.cpp
+    src/SimulationTaskTable.cpp
+    src/TaskExecutor.cpp
     src/UtcTime.cpp
 )
 

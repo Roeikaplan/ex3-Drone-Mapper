@@ -446,14 +446,22 @@ classDiagram
     }
 
     class SimulationOrchestrator {
-        -mode_ : RunMode
-        -plugins_ : PluginSet
-        -composition_ : SimulationCompositionData
-        -managers_ : vector~unique_ptr~SimulationManager~~
-        -table_ : SimulationTaskTable
-        -executor_ : unique_ptr~ITaskExecutor~
+        -args_ : CommandLineArgs ref
+        -composition_ : SimulationCompositionData ref
+        -composition_paths_ : CompositionPaths ref
+        -identity_ : ConfigIdentityIndex ref
+        -results_directory_ : path
         -logger_ : ErrorLogger ref
-        +execute(output_dir) int
+        -executor_ : ITaskExecutor ref
+        -plugins_ : vector~PluginRun~
+        +SimulationOrchestrator(args, composition, paths, identity, results_dir, logger, executor)
+        +execute(load_report) void
+        -buildManagers(load_report) void
+    }
+
+    class PluginRun {
+        +manager : unique_ptr~SimulationManager~
+        +report_name : string
     }
 
     class SimulationManager {
@@ -462,30 +470,34 @@ classDiagram
         -logger_ : ErrorLogger ref
         +SimulationManager(run_factory, plugin_name, logger)
         +run(composition, output_path) SimulationManagerReport
-        +enumerate(composition, out_cells) void
-        +assemble(results_slice) SimulationManagerReport
+        +enumerate(composition, output_path, table) void
+        +runCell(table, index) void
+        +assemble(composition, results_slice) SimulationManagerReport
+        +pluginLabel() string ref
     }
 
     class SimulationTaskTable {
         -cells_ : vector~RunCell~
         -results_ : vector~SimulationResult~
-        +build(managers, composition) void
+        -plugin_ranges_ : vector~pair~size_t,size_t~~
+        +append(cell) void
+        +closePluginRange(begin) void
+        +seal() void
         +size() size_t
         +cell(i) RunCell ref
         +result(i) SimulationResult ref
-        +sliceFor(plugin_index) span
+        +pluginCount() size_t
+        +resultsForPlugin(plugin_index) vector~SimulationResult~
     }
 
     class RunCell {
-        +plugin_index : size_t
+        +factory : ptr to ISimulationRunFactory
         +simulation : ptr to SimulationConfigData
         +mission : ptr to MissionConfigData
         +drone : ptr to DroneConfigData
         +lidar : ptr to LidarConfigData
-        +sim_index : size_t
-        +mission_index : size_t
-        +drone_index : size_t
-        +lidar_index : size_t
+        +output_path : path
+        +plugin_index : size_t
     }
 
     class SimulationRunFactoryImpl {
@@ -602,13 +614,14 @@ classDiagram
     ITaskExecutor <|.. InlineExecutor
     ITaskExecutor <|.. ThreadPoolExecutor
 
-    SimulationOrchestrator --> SimulationManager : owns many
-    SimulationOrchestrator --> SimulationTaskTable : owns
-    SimulationOrchestrator --> ITaskExecutor : owns
-    SimulationOrchestrator --> PluginLoader : owns
+    SimulationOrchestrator *-- PluginRun : owns many
+    PluginRun --> SimulationManager : owns
+    SimulationOrchestrator ..> SimulationTaskTable : builds, local to execute()
+    SimulationOrchestrator --> ITaskExecutor : uses, injected
     SimulationOrchestrator --> ComparativeReportWriter
     SimulationOrchestrator --> CompetitiveReportWriter
     SimulationTaskTable *-- RunCell
+    RunCell --> ISimulationRunFactory : non-owning
     SimulationManager --> ISimulationRunFactory : owns
     SimulationRunFactoryImpl ..> SimulationRunImpl : creates
     SimulationRunImpl ..> MapsComparison : uses
@@ -1116,11 +1129,13 @@ main
  └── PluginLoader ────────── owns vector<PluginLibrary>          (dlopen handles)
  └── Registrar (singleton) ─ owns vector<factory>                 (targets live in plugin code)
  └── SimulationCompositionData                                    (all configs, referenced by cells)
+ └── InlineExecutor / ThreadPoolExecutor                          (outlives the orchestrator)
  └── SimulationOrchestrator
-      ├── vector<unique_ptr<SimulationManager>>                   (one per plugin pair)
-      │    └── unique_ptr<ISimulationRunFactory>                  (bound to that pair's factories)
-      ├── SimulationTaskTable  { vector<RunCell>, vector<SimulationResult> }
-      └── unique_ptr<ITaskExecutor>
+      ├── vector<PluginRun>                                       (one per plugin pair)
+      │    └── unique_ptr<SimulationManager>
+      │         └── unique_ptr<ISimulationRunFactory>             (bound to that pair's factories)
+      └── (during execute) SimulationTaskTable
+             { vector<RunCell>, vector<SimulationResult>, plugin_ranges }
 
 per task (transient, lives only inside one worker's iteration)
  └── unique_ptr<SimulationRunImpl>
@@ -1133,6 +1148,21 @@ per task (transient, lives only inside one worker's iteration)
       └── unique_ptr<IMissionControl>     ← from the MissionControl .so
            └── unique_ptr<IDroneControl>  (created inside the .so)
 ```
+
+Three ownerships sit deliberately *outside* the orchestrator, and each is a lifetime statement rather than a
+style preference:
+
+- **The `PluginLoader` stays in `main`.** It holds the `dlopen` handles, so it must outlive everything that
+  holds plugin-derived callables — including the orchestrator. Nesting it inside would invert exactly the
+  ordering the teardown depends on.
+- **The executor is injected by reference, not owned.** Constructing it from `num_threads` inside the
+  orchestrator would fuse the threading policy to the class that has no other reason to know about threads;
+  as a parameter, a test substitutes a deliberately out-of-order executor and phase 08 substitutes a pool,
+  neither touching the orchestrator.
+- **The task table is local to `execute()`.** It is dead the moment the reports are assembled, and keeping
+  48 results alive for the orchestrator's whole life buys nothing. Its cells hold raw factory pointers into
+  the managers, so it must not outlive them — being a local inside the method that owns them makes that
+  automatic instead of merely true.
 
 The rule carried over from Ex2 and still holding: **`SimulationRunImpl` owns everything for its run via
 `unique_ptr`; every inner component holds non-owning references to its siblings.** Component lifetime is

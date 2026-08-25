@@ -10,6 +10,8 @@
 
 #include <UserCommon/BeamGeometry.h>
 
+#include <cmath>
+
 namespace simulator {
 namespace {
 
@@ -39,7 +41,22 @@ common::types::MovementResult MockMovement::rotate(common::types::RotationDirect
     const common::Orientation current = gps_.heading();
     const common::HorizontalAngle signed_angle =
         direction == common::types::RotationDirection::Left ? angle : -angle;
-    gps_.setHeading(common::Orientation{current.horizontal + signed_angle, current.altitude});
+
+    /**
+     * @note Wrapped into [0, 360). Letting the heading accumulate is not merely untidy: a mission of
+     *       several thousand steps reaches tens of thousands of degrees, and the sine and cosine of
+     *       an angle that large are computed from a correspondingly large radian argument, which
+     *       returns roughly 1e-16 where the exact answer is zero. A drone travelling along voxel
+     *       boundaries - which it does whenever its start position is a multiple of the resolution -
+     *       is then nudged to the wrong side of one, and a move through free space gets refused for
+     *       clipping a wall it never approached.
+     */
+    const double wrapped_deg =
+        std::fmod((current.horizontal + signed_angle).force_numerical_value_in(deg), 360.0);
+    const double normalised_deg = wrapped_deg < 0.0 ? wrapped_deg + 360.0 : wrapped_deg;
+
+    gps_.setHeading(common::Orientation{normalised_deg * common::horizontal_angle[deg],
+                                        current.altitude});
     return common::types::MovementResult{true, {}};
 }
 

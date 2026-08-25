@@ -123,9 +123,48 @@ TEST(MockMovement, RotateChangesOnlyHeading) {
 
     ASSERT_TRUE(static_cast<bool>(
         movement.rotate(common::types::RotationDirection::Right, 50.0 * common::horizontal_angle[deg])));
-    EXPECT_NEAR(gps.heading().horizontal.force_numerical_value_in(deg), -20.0, 1e-9);
+
+    /**
+     * @note 340 rather than -20: the heading is wrapped into [0, 360). The two describe the same
+     *       direction, and the wrapping is what keeps the angle bounded over a mission of thousands
+     *       of turns - an unbounded heading eventually makes the sine and cosine of an axis-aligned
+     *       direction inexact, which is enough to push a drone travelling along voxel boundaries
+     *       onto the wrong side of one.
+     */
+    EXPECT_NEAR(gps.heading().horizontal.force_numerical_value_in(deg), 340.0, 1e-9);
 
     EXPECT_NEAR(gps.position().x.force_numerical_value_in(cm), 1.0, 1e-9);
+}
+
+TEST(MockMovement, TheHeadingStaysBoundedOverManyTurns) {
+    /**
+     * @note The regression this guards. Before wrapping, a long mission drove the heading into the
+     *       tens of thousands of degrees, and `cos` of an angle that large returns roughly 1e-16
+     *       where zero is correct. A drone whose start position is a multiple of the map resolution
+     *       rides voxel boundaries, so that residue decides which cell it is judged to be in - and a
+     *       move through open space gets refused for clipping a wall one column over.
+     */
+    simulator::MockGPS gps{pos(0.0, 0.0, 0.0), heading(0.0), 1.0 * cm};
+    simulator::MockMovement movement{gps};
+
+    for (int i = 0; i < 200; ++i) {
+        ASSERT_TRUE(static_cast<bool>(movement.rotate(
+            common::types::RotationDirection::Left, 90.0 * common::horizontal_angle[deg])));
+    }
+
+    const double final_deg = gps.heading().horizontal.force_numerical_value_in(deg);
+    EXPECT_GE(final_deg, 0.0);
+    EXPECT_LT(final_deg, 360.0);
+
+    /**
+     * @note 200 quarter-turns is a whole number of revolutions, so the drone faces east again. An
+     *       advance must therefore move purely along +X, with the other axes exactly unchanged -
+     *       not merely close.
+     */
+    ASSERT_TRUE(static_cast<bool>(movement.advance(10.0 * cm)));
+    EXPECT_EQ(gps.position().y.force_numerical_value_in(cm), 0.0);
+    EXPECT_EQ(gps.position().z.force_numerical_value_in(cm), 0.0);
+    EXPECT_NEAR(gps.position().x.force_numerical_value_in(cm), 10.0, 1e-9);
 }
 
 TEST(MockMovement, NeverRefusesAnything) {

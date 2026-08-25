@@ -19,7 +19,29 @@
 
 #include <mp-units/systems/si/math.h>
 
+#include <cmath>
+
 namespace user_common {
+
+/**
+ * @brief Collapse a direction component that is zero in all but floating-point representation.
+ * @param component One component of a unit direction vector.
+ * @return Exactly zero when the value is negligible, otherwise @p component unchanged.
+ *
+ * @note An axis-aligned heading should give exactly 0 on the two axes it does not travel along, but
+ *       `cos(90 deg)` computed through radians returns about 6e-17 rather than 0. That residue is
+ *       physically meaningless - at these distances it is a fraction of an atom - yet it is enough
+ *       to matter: a drone whose start position is a multiple of the map resolution travels along
+ *       voxel *boundaries*, where the sign of a 1e-16 offset decides which cell `floor` reports. The
+ *       symptom is a move through open space being refused for clipping a wall in the neighbouring
+ *       column.
+ * @note The threshold is far below anything the centimetre-scale geometry can express, so a
+ *       genuinely near-axis beam is snapped to the axis it was already indistinguishable from.
+ */
+[[nodiscard]] inline double snapToAxis(double component) {
+    constexpr double kNegligible = 1e-12;
+    return std::abs(component) < kNegligible ? 0.0 : component;
+}
 
 /**
  * @brief Turn a heading-relative orientation into a world-facing one.
@@ -63,9 +85,9 @@ namespace user_common {
     const auto dz = si::sin(beam_orientation.altitude);
 
     const double distance_cm = distance.force_numerical_value_in(common::cm);
-    const double dir_x = dx.force_numerical_value_in(mp::one);
-    const double dir_y = dy.force_numerical_value_in(mp::one);
-    const double dir_z = dz.force_numerical_value_in(mp::one);
+    const double dir_x = snapToAxis(dx.force_numerical_value_in(mp::one));
+    const double dir_y = snapToAxis(dy.force_numerical_value_in(mp::one));
+    const double dir_z = snapToAxis(dz.force_numerical_value_in(mp::one));
 
     return common::Position3D{
         origin.x + dir_x * distance_cm * common::x_extent[common::cm],

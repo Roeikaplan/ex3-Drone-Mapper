@@ -3,12 +3,14 @@
 # configs arrive pre-parsed in MappingAlgorithmDependencies.
 
 add_library(Algorithm_323998450_211633813 SHARED
-    src/Placeholder.cpp
+    src/MappingAlgorithmImpl.cpp
+    src/MappingAlgorithmRegistration.cpp
 )
 
 target_include_directories(Algorithm_323998450_211633813
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../UserCommon/include
 )
 
 target_link_libraries(Algorithm_323998450_211633813
@@ -28,3 +30,31 @@ set_target_properties(Algorithm_323998450_211633813 PROPERTIES
 )
 
 drone_warnings(Algorithm_323998450_211633813)
+
+# ---------------------------------------------------------------------------------------------
+# Unit tests.
+#
+# A target of its own, for the same reason MissionControl needed one: this project links only
+# common::common, so neither of the other test binaries can reach these classes. Its map is
+# hand-built rather than a Map3DImpl, which lives on the Simulator side and is off limits here.
+# ---------------------------------------------------------------------------------------------
+
+add_executable(algorithm_unit_test
+    tests/MappingAlgorithmTest.cpp
+    src/MappingAlgorithmImpl.cpp
+)
+
+target_include_directories(algorithm_unit_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../UserCommon/include
+)
+
+target_link_libraries(algorithm_unit_test
+    PRIVATE
+        common::common
+        GTest::gtest_main
+)
+
+drone_warnings(algorithm_unit_test)
+gtest_discover_tests(algorithm_unit_test)

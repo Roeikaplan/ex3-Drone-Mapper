@@ -9,6 +9,8 @@
 
 #include <Simulator/Map3DImpl.h>
 
+#include <UserCommon/VoxelGrid.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -200,20 +202,16 @@ std::shared_ptr<NpyArray> Map3DImpl::makeEmptyArray(const common::types::MapConf
     }
 
     /**
-     * @note `ceil` keeps a partial trailing voxel. `MapsComparison` repeats this formula exactly;
-     *       if the two ever diverge the scoring grid shifts by a cell at the far edge of the map.
+     * @note The axis counts come from `VoxelGrid` rather than being computed here, so the array this
+     *       allocates and the grid the scorer walks can never disagree about the map's extent. They
+     *       used to be separate copies of the same `ceil` and a divergence would have been silent -
+     *       slightly wrong scores at the far edge rather than an obvious failure.
      */
-    const auto axis_count = [res_cm](auto min, auto max) -> std::size_t {
-        const double span_cm = (max - min).force_numerical_value_in(cm);
-        const double count = std::ceil(span_cm / res_cm);
-        return count > 0.0 ? static_cast<std::size_t>(count) : std::size_t{0};
-    };
-
-    const common::types::MappingBounds& bounds = config.boundaries;
+    const user_common::VoxelGrid grid = user_common::VoxelGrid::from(config);
     const NpyArray::shape_t shape{
-        axis_count(bounds.min_x, bounds.max_x),
-        axis_count(bounds.min_y, bounds.max_y),
-        axis_count(bounds.min_height, bounds.max_height),
+        static_cast<std::size_t>(grid.sizeX()),
+        static_cast<std::size_t>(grid.sizeY()),
+        static_cast<std::size_t>(grid.sizeZ()),
     };
 
     const char type_char = NpyArray::GetTypeChar(typeid(std::int8_t));

@@ -41,6 +41,7 @@ target_link_libraries(simulator_323998450_211633813
         common::common
         yaml-cpp::yaml-cpp
         TinyNPY::TinyNPY
+        Threads::Threads
         ${CMAKE_DL_LIBS}
 )
 
@@ -109,6 +110,7 @@ add_executable(simulator_unit_test
     tests/SimulationOutputWriterTest.cpp
     tests/SimulationPipelineTest.cpp
     tests/TaskTableTest.cpp
+    tests/ThreadPoolExecutorTest.cpp
     src/CommandLineArgs.cpp
     src/CompositionLoader.cpp
     src/ConfigIdentityIndex.cpp
@@ -146,6 +148,7 @@ target_link_libraries(simulator_unit_test
         yaml-cpp::yaml-cpp
         TinyNPY::TinyNPY
         GTest::gtest_main
+        Threads::Threads
         ${CMAKE_DL_LIBS}
 )
 

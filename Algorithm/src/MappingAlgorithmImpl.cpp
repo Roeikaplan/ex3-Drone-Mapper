@@ -109,20 +109,19 @@ constexpr std::array<VoxelIndex, 6> kNeighbours{{
  */
 [[nodiscard]] std::optional<std::vector<VoxelIndex>> planRouteToFrontier(
     const common::IMap3D& map, const VoxelGrid& grid, const std::vector<std::uint8_t>& surveyed,
-    const VoxelIndex& start) {
+    const VoxelIndex& start, FrontierSearchScratch& scratch) {
     const std::size_t cells = grid.cellCount();
     if (cells == 0) {
         return std::nullopt;
     }
 
-    std::vector<std::uint8_t> visited(cells, 0);
-    std::vector<std::int64_t> parent(cells, -1);
-    std::deque<VoxelIndex> queue{start};
-    visited[grid.linearIndex(start)] = 1;
+    scratch.beginSearch(cells);
 
-    while (!queue.empty()) {
-        const VoxelIndex current = queue.front();
-        queue.pop_front();
+    scratch.enqueue(start);
+    scratch.visit(grid.linearIndex(start), FrontierSearchScratch::kNoParent);
+
+    while (!scratch.queueEmpty()) {
+        const VoxelIndex current = scratch.dequeue();
         const std::size_t current_linear = grid.linearIndex(current);
 
         const bool is_target = !(current == start) && surveyed[current_linear] == 0 &&
@@ -130,9 +129,16 @@ constexpr std::array<VoxelIndex, 6> kNeighbours{{
                                    common::types::VoxelOccupancy::Empty &&
                                bordersUnmapped(map, grid, current);
         if (is_target) {
+            /**
+             * @note Every cell walked back through was reached in *this* generation, so its parent
+             *       was written in this generation too - stale predecessors from an earlier search
+             *       are unreachable. The start cell is the one that could look stale, which is why it
+             *       is seeded with `kNoParent` rather than left alone.
+             */
             std::vector<VoxelIndex> route{current};
-            for (std::size_t at = current_linear; parent[at] >= 0;) {
-                at = static_cast<std::size_t>(parent[at]);
+            for (std::size_t at = current_linear;
+                 scratch.parent[at] != FrontierSearchScratch::kNoParent;) {
+                at = static_cast<std::size_t>(scratch.parent[at]);
                 route.push_back(grid.indexFromLinear(at));
             }
             std::reverse(route.begin(), route.end());
@@ -145,15 +151,14 @@ constexpr std::array<VoxelIndex, 6> kNeighbours{{
                 continue;
             }
             const std::size_t neighbour_linear = grid.linearIndex(neighbour);
-            if (visited[neighbour_linear] != 0) {
+            if (scratch.visited(neighbour_linear)) {
                 continue;
             }
             if (occupancyAt(map, grid, neighbour) != common::types::VoxelOccupancy::Empty) {
                 continue;
             }
-            visited[neighbour_linear] = 1;
-            parent[neighbour_linear] = static_cast<std::int64_t>(current_linear);
-            queue.push_back(neighbour);
+            scratch.visit(neighbour_linear, static_cast<std::uint32_t>(current_linear));
+            scratch.enqueue(neighbour);
         }
     }
 
@@ -386,6 +391,53 @@ void appendElevate(std::deque<common::types::MappingStepCommand>& plan, double s
 } // namespace
 
 /**
+ * @brief Size the buffers for a grid and begin a new search.
+ * @param cells How many voxels the grid holds.
+ * @note The allocation happens on the first search of a run and never again, which is the entire
+ *       point of this class: the previous version declared both arrays locally, so every search paid
+ *       for ~2 MB of allocation and zero-fill on the large scenarios.
+ * @note Bumping the generation is what discards the previous search's visited marks, so no array is
+ *       re-zeroed here either. Only the wrap-around case has to touch memory, and it arrives once
+ *       every four billion searches.
+ */
+void FrontierSearchScratch::beginSearch(std::size_t cells) {
+    if (visit_stamp.size() != cells) {
+        visit_stamp.assign(cells, 0);
+        parent.assign(cells, kNoParent);
+        generation = 0;
+
+        /**
+         * @note Reserved to the exact worst case, which is not a guess: the visited check lets a cell
+         *       be enqueued at most once per search, so the queue can never exceed the cell count.
+         *       Paying for it here means no search ever reallocates mid-flight, and the pages of the
+         *       tail stay untouched on the scenarios that never need them.
+         */
+        queue.reserve(cells);
+    }
+
+    /**
+     * @note `clear()` rather than a fresh vector: it destroys nothing (the element is trivial) and
+     *       keeps the capacity, which is what makes every search after the first allocation-free.
+     */
+    queue.clear();
+    queue_head = 0;
+
+    if (generation == kMaxGeneration) {
+        /**
+         * @note Generation 0 is the "never visited" marker, so it can never become a live generation.
+         *       Clearing on wrap is what keeps that true - without it every cell would read as already
+         *       visited once the counter came back around, and the search would return nothing.
+         * @note This is the only memory the search clears, and it happens on one call in 255. That
+         *       amortisation is the entire reason the stamp can afford to be a single byte.
+         */
+        std::fill(visit_stamp.begin(), visit_stamp.end(), std::uint8_t{0});
+        generation = 0;
+    }
+
+    ++generation;
+}
+
+/**
  * @brief Decide the next command.
  * @param state The drone's current pose and step index.
  * @param latest_scan The previous scan, or null on the first call; unused.
@@ -398,6 +450,7 @@ void appendElevate(std::deque<common::types::MappingStepCommand>& plan, double s
  */
 common::types::MappingStepCommand MappingAlgorithmImpl::nextStep(
     const common::types::DroneState& state, const common::types::LidarScanResult* latest_scan) {
+        
     (void)latest_scan;
 
     if (finished_) {
@@ -436,7 +489,7 @@ common::types::MappingStepCommand MappingAlgorithmImpl::nextStep(
     }
 
     const std::optional<std::vector<VoxelIndex>> route =
-        planRouteToFrontier(output_map_, grid, surveyed_, *current);
+        planRouteToFrontier(output_map_, grid, surveyed_, *current, scratch_);
     if (!route || route->size() < 2) {
         finished_ = true;
         return terminal(classifyEnding(output_map_, grid));

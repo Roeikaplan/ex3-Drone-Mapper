@@ -1025,7 +1025,11 @@ alive unmaps the code that its destructor is about to run.
 **Why it is stated as an explicit sequence rather than left to destructors.** Destruction order within a scope
 is reverse declaration order, which couples correctness to the order in which variables happen to be written.
 That is far too fragile for a use-after-unmap bug, which typically manifests as a segfault in the C runtime with
-no useful stack. The orchestrator exposes an explicit `shutdown()` that performs the four steps in order.
+no useful stack. `main` therefore performs the four steps as an explicit, commented sequence: the plugin
+load report and the orchestrator both die in a nested scope, then `Registrar::clear()`, then
+`releaseAll()`. It lives in `main` rather than in an orchestrator `shutdown()` because the loader
+outlives the orchestrator by design - nesting the loader inside the object whose destruction must
+precede `dlclose` would invert the very ordering this section exists to protect.
 
 ### 7.10 Mode-level report writing
 
@@ -1072,13 +1076,22 @@ append a digest of each output map to the key.
 |---|---|---|---|
 | absent | 0 | main | 1 |
 | `1` | 0 | main | 1 |
-| `N ≥ 2` | `min(N, task_count)` | workers; main blocks in `join()` | `1 + min(N, task_count)` |
+| `N ≥ 2`, `task_count ≥ 2` | `min(N, task_count)` | workers; main blocks in `join()` | `1 + min(N, task_count)` |
+| `N ≥ 2`, `task_count ≤ 1` | 0 | main | 1 |
 
 The total is therefore **never exactly 2**. This reads like a typo in the assignment but is not: `N` counts
 *additional* threads. Implementing "N including main" is a spec violation that is easy to ship by accident, so
 the executor asserts the invariant in a unit test.
 
-Capping at `min(N, task_count)` satisfies the "never spawn a thread with nothing to run" rule.
+**The last row is where the assignment's two capping rules collide**, and it is the one case the spec does not
+resolve. "Cap at `min(N, task_count)`" and "the total is never exactly 2" disagree at exactly one task: the cap
+alone yields one worker plus a blocked main, which is the forbidden total. Falling back to the calling thread
+satisfies both and wastes nothing — a lone worker while main sits in `join()` does no more work than main would
+have done itself. The invariant that falls out, and the one the tests assert, is that **the worker count is
+never exactly 1**.
+
+The whole rule is therefore one predicate, `ThreadPoolExecutor::workerCountFor(task_count)`, so it can be
+unit-tested as a table rather than inferred from behaviour. `main` never branches on `num_threads` at all.
 
 ### 8.2 Why an atomic cursor and not a queue
 
@@ -1087,18 +1100,43 @@ dynamically; here nothing arrives. Using one would add a mutex, a condition vari
 solve a problem the system does not have.
 
 ```cpp
-void ThreadPoolExecutor::forEach(std::size_t count, const std::function<void(std::size_t)>& body) {
-    cursor_.store(0);
-    // workers:
+void ThreadPoolExecutor::drain(std::size_t count, const std::function<void(std::size_t)>& body) {
     for (std::size_t i = cursor_.fetch_add(1, std::memory_order_relaxed); i < count;
          i = cursor_.fetch_add(1, std::memory_order_relaxed)) {
         body(i);
     }
 }
+
+void ThreadPoolExecutor::forEach(std::size_t count, const std::function<void(std::size_t)>& body) {
+    cursor_.store(0, std::memory_order_relaxed);
+
+    const std::size_t workers = workerCountFor(count);
+    if (workers == 0) { drain(count, body); return; }        // main does the work
+
+    std::vector<std::thread> pool;
+    pool.reserve(workers);
+    try {
+        for (std::size_t i = 0; i < workers; ++i) {
+            pool.emplace_back([this, count, &body] { drain(count, body); });
+        }
+    } catch (const std::system_error&) { /* fewer workers than hoped; the drain below finishes it */ }
+
+    for (std::thread& worker : pool) { worker.join(); }
+    drain(count, body);                                       // no-op unless spawning failed
+}
 ```
 
 `memory_order_relaxed` is sufficient for the counter because it only distributes indices; the happens-before
 edge that publishes each task's writes to the main thread is the `join()` itself.
+
+The pool is spawned inside `forEach` rather than at construction because the cap needs `task_count`, which is
+not known until the table has been enumerated — and the executor is constructed before that. There is exactly
+one `forEach` per program run, so nothing is spawned repeatedly.
+
+The trailing `drain` is the spawn-failure path. `std::thread`'s constructor throws when the system is out of
+resources; if that happens partway through, the workers that did start still drain the table and anything left
+over completes on the calling thread. A resource-starved machine degrades to fewer threads rather than
+producing a short report. In the normal case the cursor is already past the end and the call returns at once.
 
 Self-scheduling also load-balances for free, which matters here: run durations vary by orders of magnitude
 (a 20³ map versus a 30³ map, an algorithm that finishes early versus one that exhausts `max_steps`). A static
@@ -1331,7 +1369,7 @@ Where each hard constraint from `project_context.md` §9 is discharged in this d
 | `drone_warnings` on every target | build wiring, phase 00 |
 | Never crashes, never `exit()` | §7.1, §10 — every branch returns from `main`; every task body catches |
 | Errors logged immediately | §10 — `ErrorLogger` flushes per line, under a mutex |
-| `dlclose` only after all plugin objects **and** factories are gone | §7.9 — explicit four-step `shutdown()` |
+| `dlclose` only after all plugin objects **and** factories are gone | §7.9 — explicit four-step sequence in `main` |
 | No cached plugin instances, never reload a `.so` | §8.3 — fresh instances per run are what make cells independent |
 | mp-units types throughout | carried over; unit stripping only via the deliberate `force_numerical_value_in` idiom |
 | Thread count 1, or 1 + N (N ≥ 2), never 2, never idle | §8.1 — asserted in a unit test |

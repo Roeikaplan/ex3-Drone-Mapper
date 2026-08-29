@@ -182,6 +182,27 @@ small change.
 **Done when** — the same composition run at 1, 4, and 16 threads produces byte-identical reports, and TSan
 is clean.
 
+**Status: done.** `ThreadPoolExecutor` owns the whole rule via one testable predicate,
+`workerCountFor`, and `main` never branches on `num_threads`. Reports at 4 threads are byte-identical
+to the serial baseline (48 maps + `errors.log`; only `generated_at_utc` differs), and TSan reports zero
+races across the unit suite, a 48-run comparative pass, and a competitive pass driving the real
+algorithm.
+
+The unexpected part was that threading initially made the workload **slower** — 4 threads took 8m01s
+against 6m52s serial, burning twice the CPU and 96s of system time. The executor was not at fault. The
+frontier search allocated and zero-filled ~2 MB of `visited`/`parent` *per call* and pushed a
+`std::deque` queue that chunk-allocated thousands of times per search; serially the allocator recycles
+one warm block, but four workers turn that into `mmap` churn and free-list contention. Hoisting both
+into a reused per-instance scratch buffer fixed it. Two lessons worth keeping:
+
+- **A serial-friendly allocation pattern can be a parallel disaster.** Nothing about the code looked
+  wrong until it ran on four threads.
+- **Measure the array widths.** A first attempt used a 32-bit generation stamp and cost 47% serially,
+  because that array is probed for every neighbour of every expanded node. One byte, cleared only when
+  the counter wraps, keeps both the cache behaviour and the allocation-free property.
+
+Final on the full competitive workload: **8m08s at 1 thread, 4m21s at 4 — 1.87x.**
+
 ---
 
 ### 09 — Ship: teardown, tests, packaging

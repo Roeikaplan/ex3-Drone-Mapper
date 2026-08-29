@@ -10,6 +10,13 @@ find_package(tinynpy CONFIG REQUIRED)     # target: TinyNPY::TinyNPY  (note the 
 find_package(yaml-cpp CONFIG REQUIRED)    # target: yaml-cpp::yaml-cpp
 find_package(GTest CONFIG REQUIRED)       # targets: GTest::gtest_main, GTest::gmock
 
+# The simulator runs its task table on a std::thread pool. On Linux/GCC that needs -pthread at both
+# compile and link time, which Threads::Threads carries; without it std::thread links but aborts at
+# run time. THREADS_PREFER_PTHREAD_FLAG must be set before the find to get the flag rather than a
+# bare -lpthread.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)            # target: Threads::Threads
+
 # Must be called at top level for ctest to see the suite from the top build directory.
 # Test targets themselves arrive with the code they test, starting in phase 02.
 enable_testing()

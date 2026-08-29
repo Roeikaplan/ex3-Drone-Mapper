@@ -146,10 +146,13 @@ int main(int argc, char** argv) {
         }
 
         /**
-         * @note Single-threaded for now. Phase 08 substitutes a pool here and changes nothing else -
-         *       which is the entire reason the executor is a parameter rather than a loop.
+         * @note No branch on `num_threads` here. The executor owns the whole thread rule, including
+         *       the case where the answer is no threads at all, so this stays one construction
+         *       whatever was asked for.
+         * @note Declared before the orchestrator so it outlives it: the orchestrator borrows it by
+         *       reference, and a worker must never outlive the object that scheduled it.
          */
-        simulator::InlineExecutor executor;
+        simulator::ThreadPoolExecutor executor{args.num_threads};
         simulator::SimulationOrchestrator orchestrator{
             args, composition.composition, composition_paths, identity, results.path, logger,
             executor};

@@ -289,6 +289,14 @@ The `num_threads` rule is deliberately unusual — read it carefully:
 - Never spawn a thread that has nothing to run: with `T` tasks, cap the pool at `min(N, T)`.
 - The main thread blocking in `join()` while workers run is explicitly fine.
 
+**RESOLVED (phase 08): the two capping rules collide at `T = 1`.** With `N ≥ 2` and a single task,
+`min(N, T)` yields one worker plus a blocked main — a live total of exactly 2, which the third bullet
+forbids. The assignment does not say which rule wins. **We fall back to running inline whenever the
+effective worker count would be 1** (0 workers, 1 live thread), which satisfies both bullets and costs
+nothing: a lone worker while main waits in `join()` performs no more work than main would have. The
+resulting invariant — **the worker count is never exactly 1** — is asserted directly in
+`ThreadPoolExecutor::workerCountFor`'s unit tests rather than inferred from observed behaviour.
+
 Design guidance straight from the PDF:
 
 - **Loading all required `.so` files up front is explicitly endorsed.** Doing so on the main thread
@@ -700,7 +708,9 @@ Verify every change against this list before calling it done:
       factories are gone.
 - [ ] **No cached plugin instances** — recreate from the factory per run; never reload a `.so`.
 - [ ] **mp-units types throughout**; no raw `double` for physical quantities.
-- [ ] **Thread count obeys the rule**: 1, or 1 + N (N ≥ 2), never exactly 2, never idle threads.
+- [x] **Thread count obeys the rule**: 1, or 1 + N (N ≥ 2), never exactly 2, never idle threads.
+      *(phase 08 — `ThreadPoolExecutor::workerCountFor`, asserted as a table plus a swept invariant
+      test over every `requested` × `task_count` pair in range.)*
 - [ ] **Algorithm minimums**: never fly into walls; map everything in the configured boundaries;
       be efficient and exact.
 

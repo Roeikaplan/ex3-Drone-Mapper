@@ -94,6 +94,10 @@ public:
      * @param count Number of tasks.
      * @param body Work to perform for one index; must not throw.
      * @note Returns only once every index has been visited exactly once.
+     * @note **Postcondition: no worker outlives this call.** The pool is a local of `forEach` and is
+     *       joined before returning, so this object never owns a running thread between calls. That is
+     *       what makes "join the workers" the *first* step of teardown without `main` having to ask for
+     *       it: by the time the orchestrator is destroyed, no thread can still be inside plugin code.
      */
     void forEach(std::size_t count, const std::function<void(std::size_t)>& body) override;
 

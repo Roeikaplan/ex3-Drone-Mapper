@@ -176,7 +176,7 @@ std::unique_ptr<ISimulationRun> SimulationRunFactoryImpl::create(
     const common::types::DroneConfigData& drone_config,
     const common::types::LidarConfigData& lidar_config,
     const std::filesystem::path& output_path) {
-    std::shared_ptr<NpyArray> hidden_array = Map3DImpl::loadArray(simulation_config.map_filename);
+    std::unique_ptr<NpyArray> hidden_array = Map3DImpl::loadArray(simulation_config.map_filename);
     const common::types::MapConfig hidden_config = hiddenMapConfig(
         *hidden_array, simulation_config.map_offset, simulation_config.map_resolution);
     auto hidden_map = std::make_unique<Map3DImpl>(std::move(hidden_array), hidden_config);

@@ -180,14 +180,14 @@ TEST_F(Map3DImplTest, NonPositiveResolutionIsRejectedRatherThanDividedBy) {
 }
 
 TEST_F(Map3DImplTest, NullArrayIsRejected) {
-    EXPECT_THROW(simulator::Map3DImpl{std::shared_ptr<NpyArray>{}}, std::invalid_argument);
+    EXPECT_THROW(simulator::Map3DImpl{std::unique_ptr<NpyArray>{}}, std::invalid_argument);
 }
 
 TEST_F(Map3DImplTest, LoadingARealScenarioMap) {
     const fs::path map_file = fs::path{DRONE_SOURCE_DIR} / "inputs" / "map" / "scenario_small.npy";
     ASSERT_TRUE(fs::exists(map_file)) << map_file.string();
 
-    const std::shared_ptr<NpyArray> array = simulator::Map3DImpl::loadArray(map_file);
+    const std::unique_ptr<NpyArray> array = simulator::Map3DImpl::loadArray(map_file);
     ASSERT_EQ(array->Shape().size(), 3u);
     EXPECT_EQ(array->SizeValueBytes(), 1u) << "the storage contract is one byte per voxel";
     EXPECT_GT(array->NumValue(), 0u);

@@ -156,18 +156,41 @@ int main(int argc, char** argv) {
         simulator::SimulationOrchestrator orchestrator{
             args, composition.composition, composition_paths, identity, results.path, logger,
             executor};
+
+        /**
+         * @note TEARDOWN STEP 1 - join the workers, and STEP 2 - destroy every run.
+         *       Both complete inside this call, which is why neither appears as a statement below.
+         *       `ThreadPoolExecutor::forEach` joins its pool before returning, and each
+         *       `SimulationRunImpl` is a local of `SimulationManager::runCell` destroyed at the end of
+         *       its own cell. So when `execute` returns, no thread is inside plugin code and no plugin
+         *       *instance* is alive - only the factories that made them.
+         */
         orchestrator.execute(plugins);
+
+        /**
+         * @note TEARDOWN STEP 3 happens at the closing brace below: destroying the orchestrator
+         *       releases the managers, and with them the run factories holding copies of each
+         *       plugin's `std::function`. Those callables have their targets compiled into the
+         *       plugin's code segment, so they are every bit as dangerous to outlive a `dlclose` as an
+         *       instance would be. The scope exists for this and nothing else.
+         */
     }
 
     /**
-     * @note Anything a library registered but the loader never claimed is dropped here, while the
-     *       libraries are still mapped.
+     * @note TEARDOWN STEP 4a - drop anything a library registered that the loader never claimed.
+     *       These are `std::function`s too, and the registrar is a singleton that outlives `main`, so
+     *       no scope can reach them; they have to be cleared by hand, while the libraries are still
+     *       mapped.
      */
     simulator::Registrar::instance().clear();
 
     /**
-     * @note Only now. Every plugin instance, every factory copy, and every claimed factory is gone,
-     *       so unmapping the code they pointed into is finally safe.
+     * @note TEARDOWN STEP 4b - and only now. Every plugin instance, every factory copy, and every
+     *       claimed factory is gone, so unmapping the code they pointed into is finally safe. This
+     *       clears the loader's vector; `~PluginLibrary` is the one place that calls `dlclose`.
+     * @note Getting this order wrong does not fail here. It crashes during static destruction, after
+     *       `main` has already returned 0, with a stack that names nothing in this project - which is
+     *       exactly why the sequence is written out rather than left to destructor order.
      */
     loader.releaseAll();
 

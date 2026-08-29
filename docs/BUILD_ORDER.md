@@ -219,6 +219,30 @@ Final on the full competitive workload: **8m08s at 1 thread, 4m21s at 4 — 1.87
 **Done when** — you unzip into a clean container, run
 `cmake --preset default && cmake --build --preset default`, and both modes run without touching anything.
 
+**Status: 09a done** (teardown, constraints, `UserCommon/`, README). Packaging is 09b.
+
+Three of 09a's nominal items turned out to be already satisfied and needed verification rather than
+work: `UserCommon/` was created in phase 05 with exactly the predicted content (`BeamGeometry.h`
+shared by `MockLidar`/`ScanResultToVoxels`/`DroneControlImpl`/`MockMovement`, `VoxelGrid.h` shared by
+Algorithm and Simulator); `~PluginLibrary` was already the only `dlclose` site; and the CTest wiring
+was complete. What actually changed:
+
+- **The teardown is now written out**, four labelled steps in `main.cpp`, rather than left to scope
+  and declaration order — and `PluginLifecycleTest` pins it with real `dlopen`ed fixtures, including a
+  deliberately-taken factory copy. That test suite required linking `RegistrationEntryPoints.cpp` into
+  the unit-test binary and setting `ENABLE_EXPORTS` on it, so the tests can load plugins the same way
+  the simulator does.
+- **One real checklist violation found and fixed**: `Map3DImpl` held a `shared_ptr<NpyArray>` that was
+  never shared. Converted to `unique_ptr`; the tree now has no `shared_ptr` at all. The HLD's
+  justification for it was wrong and has been corrected rather than deleted.
+- **Two accepted exceptions documented** rather than quietly ticked: `drone_common` is an `INTERFACE`
+  library and cannot take `PRIVATE` compile options, and `UserCommon/VoxelGrid.h` deliberately strips
+  units to a raw `double` at the grid boundary for index arithmetic.
+
+179 tests pass. The full competitive pass remains byte-identical to the phase-07b baseline — all 48
+maps and `errors.log` unchanged, only the three `generated_at_utc` lines differing — which is the gate
+the map-layer ownership change had to clear.
+
 ---
 
 ## Pitfalls

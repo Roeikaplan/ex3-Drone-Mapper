@@ -575,14 +575,14 @@ classDiagram
     }
 
     class Map3DImpl {
-        -array_ : shared_ptr~NpyArray~
+        -array_ : unique_ptr~NpyArray~
         -config_ : MapConfig
         +atVoxel(pos) VoxelOccupancy
         +isInBounds(pos) bool
         +set(pos, value) void
         +save(path) void
-        +loadArray(path) shared_ptr~NpyArray~
-        +makeEmptyArray(config) shared_ptr~NpyArray~
+        +loadArray(path) unique_ptr~NpyArray~
+        +makeEmptyArray(config) unique_ptr~NpyArray~
     }
 
     class MockLidar {
@@ -1211,9 +1211,14 @@ The one lifetime that crosses the `.so` boundary is the plugin instance, and it 
 matters too: `mission_control_` must be destroyed before the algorithm and the mocks it references, so members
 are declared in construction order and destroyed in reverse.
 
-`shared_ptr` appears in exactly one place: `Map3DImpl` holds `shared_ptr<NpyArray>` because the hidden map's
-array is genuinely shared between the map wrapper and the loader that produced it. Everywhere else,
-`unique_ptr`. No `new`, no `delete`.
+**`shared_ptr` appears nowhere.** It briefly did — `Map3DImpl` held `shared_ptr<NpyArray>` on the stated
+grounds that the array was "shared between the map wrapper and the loader that produced it". That was simply
+untrue: `loadArray` and `makeEmptyArray` each produce an array that is moved into exactly one `Map3DImpl`, and
+no two maps ever reference the same array. The loader hands over and lets go. Phase 09a converted it to
+`unique_ptr`, so ownership is `unique_ptr` throughout, with no `new` and no `delete` anywhere.
+
+The general lesson is worth keeping: a `shared_ptr` whose justification is a *sentence* rather than a second
+owner you can name is almost always a `unique_ptr`.
 
 ---
 
@@ -1363,7 +1368,7 @@ Where each hard constraint from `project_context.md` §9 is discharged in this d
 
 | Constraint | Discharged by |
 |---|---|
-| No `new` / `delete` | §9 — `unique_ptr` throughout, one justified `shared_ptr` |
+| No `new` / `delete` | §9 — `unique_ptr` throughout; no `shared_ptr` anywhere |
 | Never modify `common/` | §3 — all Ex3 concepts live in new Simulator-side classes |
 | Never change a provided signature | §4 — the plugin dimension is closed by constructor binding |
 | `drone_warnings` on every target | build wiring, phase 00 |

@@ -6,7 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(mp-units CONFIG REQUIRED)    # target: mp-units::mp-units
-find_package(tinynpy CONFIG REQUIRED)     # target: TinyNPY::TinyNPY  (note the capitalisation)
+# Package name must match the shipped TinyNPYConfig.cmake exactly. Spelled `tinynpy` this resolves
+# only when a stale tinynpy_DIR is already in the cache, so an existing build tree keeps working while
+# a clean one fails at configure - which is how this survived until the phase-09a clean-build check.
+find_package(TinyNPY CONFIG REQUIRED)     # target: TinyNPY::TinyNPY
 find_package(yaml-cpp CONFIG REQUIRED)    # target: yaml-cpp::yaml-cpp
 find_package(GTest CONFIG REQUIRED)       # targets: GTest::gtest_main, GTest::gmock
 

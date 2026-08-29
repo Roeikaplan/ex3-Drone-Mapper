@@ -80,6 +80,10 @@ function(drone_fixture_plugin target source kind)
 endfunction()
 
 drone_fixture_plugin(StubAlgorithm_A      tests/fixtures/StubAlgorithm.cpp      algorithms)
+# Deliberately in its own folder, NOT alongside the algorithm fixtures: a library that registers
+# nothing must never appear in a folder that an end-to-end run enumerates, or every such run grows a
+# spurious load failure in its report.
+drone_fixture_plugin(SilentPlugin         tests/fixtures/SilentPlugin.cpp       negative)
 drone_fixture_plugin(StubMissionControl_A tests/fixtures/StubMissionControl.cpp mission_controls)
 drone_fixture_plugin(StubMissionControl_B tests/fixtures/StubMissionControl.cpp mission_controls)
 
@@ -106,6 +110,7 @@ add_executable(simulator_unit_test
     tests/MapsComparisonTest.cpp
     tests/MocksTest.cpp
     tests/ModeReportWritersTest.cpp
+    tests/PluginLifecycleTest.cpp
     tests/ResultsDirectoryTest.cpp
     tests/SimulationOutputWriterTest.cpp
     tests/SimulationPipelineTest.cpp
@@ -124,6 +129,7 @@ add_executable(simulator_unit_test
     src/PluginLibrary.cpp
     src/PluginLoader.cpp
     src/Registrar.cpp
+    src/RegistrationEntryPoints.cpp
     src/ResultsDirectory.cpp
     src/SimulationManager.cpp
     src/SimulationOrchestrator.cpp
@@ -157,7 +163,19 @@ target_link_libraries(simulator_unit_test
 target_compile_definitions(simulator_unit_test
     PRIVATE
         DRONE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/.."
+        DRONE_PLUGIN_FIXTURES="${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures"
 )
+
+# PluginLifecycleTest dlopens the fixture plugins for real, so this target needs the same two
+# properties the simulator executable does: it must DEFINE the registration constructors
+# (RegistrationEntryPoints.cpp, above) and EXPORT them, or every dlopen here fails at runtime with
+# "undefined symbol" while the build stays completely clean.
+set_target_properties(simulator_unit_test PROPERTIES
+    ENABLE_EXPORTS ON
+)
+
+# The fixtures must exist before the tests that load them run.
+add_dependencies(simulator_unit_test StubAlgorithm_A StubMissionControl_A StubMissionControl_B SilentPlugin)
 
 drone_warnings(simulator_unit_test)
 gtest_discover_tests(simulator_unit_test)

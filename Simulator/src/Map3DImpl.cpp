@@ -84,7 +84,7 @@ struct VoxelIndex {
  * @brief Construct over an array with default (empty) geometry.
  * @param map_ptr Backing array; must not be null.
  */
-Map3DImpl::Map3DImpl(std::shared_ptr<NpyArray> map_ptr)
+Map3DImpl::Map3DImpl(std::unique_ptr<NpyArray> map_ptr)
     : Map3DImpl(std::move(map_ptr), common::types::MapConfig{}) {}
 
 /**
@@ -95,7 +95,7 @@ Map3DImpl::Map3DImpl(std::shared_ptr<NpyArray> map_ptr)
  * @note Rejecting null here rather than tolerating it keeps every other method free of a null check,
  *       and a null array is a wiring bug rather than a recoverable input problem.
  */
-Map3DImpl::Map3DImpl(std::shared_ptr<NpyArray> map_ptr, common::types::MapConfig map_config)
+Map3DImpl::Map3DImpl(std::unique_ptr<NpyArray> map_ptr, common::types::MapConfig map_config)
     : map_(std::move(map_ptr)), config_(map_config) {
     if (!map_) {
         throw std::invalid_argument("Map3DImpl requires a non-null map array.");
@@ -195,7 +195,7 @@ void Map3DImpl::save(const std::filesystem::path& path) const {
  * @note Every cell starts `Unmapped`. Scanning upgrades cells to `Empty` or `Occupied`, so a cell
  *       still reading `Unmapped` at the end genuinely was never observed.
  */
-std::shared_ptr<NpyArray> Map3DImpl::makeEmptyArray(const common::types::MapConfig& config) {
+std::unique_ptr<NpyArray> Map3DImpl::makeEmptyArray(const common::types::MapConfig& config) {
     const double res_cm = config.resolution.force_numerical_value_in(cm);
     if (!(res_cm > 0.0)) {
         throw std::invalid_argument("Map3DImpl::makeEmptyArray requires a positive resolution.");
@@ -215,7 +215,7 @@ std::shared_ptr<NpyArray> Map3DImpl::makeEmptyArray(const common::types::MapConf
     };
 
     const char type_char = NpyArray::GetTypeChar(typeid(std::int8_t));
-    auto array = std::make_shared<NpyArray>(shape, sizeof(std::int8_t), type_char);
+    auto array = std::make_unique<NpyArray>(shape, sizeof(std::int8_t), type_char);
     array->Allocate();
 
     std::int8_t* data = array->Data<std::int8_t>();
@@ -234,8 +234,8 @@ std::shared_ptr<NpyArray> Map3DImpl::makeEmptyArray(const common::types::MapConf
  *       buffer as one byte per voxel over a 3-D grid, so a wider dtype would not fail - it would
  *       quietly produce garbage occupancy for every cell.
  */
-std::shared_ptr<NpyArray> Map3DImpl::loadArray(const std::filesystem::path& path) {
-    auto array = std::make_shared<NpyArray>();
+std::unique_ptr<NpyArray> Map3DImpl::loadArray(const std::filesystem::path& path) {
+    auto array = std::make_unique<NpyArray>();
     if (const char* error = array->LoadNPY(path.string())) {
         throw std::runtime_error(error);
     }

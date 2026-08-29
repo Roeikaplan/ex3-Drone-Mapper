@@ -43,7 +43,7 @@ public:
      *       would report zero boundaries, and scoring walks the origin map's boundaries - so an
      *       empty grid there yields a false perfect score.
      */
-    explicit Map3DImpl(std::shared_ptr<NpyArray> map_ptr);
+    explicit Map3DImpl(std::unique_ptr<NpyArray> map_ptr);
 
     /**
      * @brief Construct over an array with explicit geometry.
@@ -51,7 +51,7 @@ public:
      * @param map_config Boundaries, offset, and resolution relating world centimetres to indices.
      * @throws std::invalid_argument when @p map_ptr is null.
      */
-    Map3DImpl(std::shared_ptr<NpyArray> map_ptr, common::types::MapConfig map_config);
+    Map3DImpl(std::unique_ptr<NpyArray> map_ptr, common::types::MapConfig map_config);
 
     /**
      * @brief Occupancy of the voxel containing a world position.
@@ -100,7 +100,7 @@ public:
      *       shifts the scoring grid by one cell at the far edge of every map, which is wrong quietly
      *       rather than obviously.
      */
-    [[nodiscard]] static std::shared_ptr<NpyArray> makeEmptyArray(
+    [[nodiscard]] static std::unique_ptr<NpyArray> makeEmptyArray(
         const common::types::MapConfig& config);
 
     /**
@@ -113,10 +113,10 @@ public:
      *       on. A wider dtype would be indexed as bytes and silently misread as garbage occupancy,
      *       so it is rejected up front.
      */
-    [[nodiscard]] static std::shared_ptr<NpyArray> loadArray(const std::filesystem::path& path);
+    [[nodiscard]] static std::unique_ptr<NpyArray> loadArray(const std::filesystem::path& path);
 
 private:
-    std::shared_ptr<NpyArray> map_;
+    std::unique_ptr<NpyArray> map_;
     common::types::MapConfig config_;
 };
 

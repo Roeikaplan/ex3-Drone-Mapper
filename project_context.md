@@ -697,22 +697,59 @@ plan per-subproject test targets; confirm the grading rules on the forum.
 
 Verify every change against this list before calling it done:
 
-- [ ] **No `new` / `delete`** anywhere.
-- [ ] **`unique_ptr` by default**; `shared_ptr` only where sharing is real and lifetime is unknown.
-- [ ] **Never modify `common/`**, and never add files to it.
-- [ ] **Never change a provided interface signature.**
-- [ ] **`drone_warnings(target)` on every target**; zero warnings, since they are errors.
-- [ ] **The Simulator never crashes** and never calls `exit()`; `main` always returns.
-- [ ] **Errors are logged the moment they occur.**
-- [ ] **`dlclose` every handle**, and only after all plugin-derived objects *and* the registrar's
+Walked line by line in **phase 09a**; each tick carries the evidence it rests on.
+
+- [x] **No `new` / `delete`** anywhere.
+      *(grep over all four project folders returns only deleted special members — `= delete` on copy
+      and move constructors. No owning raw pointer exists in the tree.)*
+- [x] **`unique_ptr` by default**; `shared_ptr` only where sharing is real and lifetime is unknown.
+      *(phase 09a — `Map3DImpl` held `shared_ptr<NpyArray>` where nothing was ever shared: both
+      `loadArray` and `makeEmptyArray` produce an array moved into exactly one owner. Converted to
+      `unique_ptr`; **the tree now contains no `shared_ptr` at all**. Verified byte-identical output
+      afterwards, since the change is in the map layer every score depends on.)*
+- [x] **Never modify `common/`**, and never add files to it.
+      *(`git log -- common/` shows no commit since `24573bd setup`, and the working tree is clean.)*
+- [x] **Never change a provided interface signature.**
+      *(Same check extended to `Simulator/common_simulator/` and
+      `MissionControl/common_mission_control/` — both untouched since `setup`.)*
+- [x] **`drone_warnings(target)` on every target**; zero warnings, since they are errors.
+      *(All seven compiled targets covered, plus every fixture plugin via `drone_fixture_plugin`.
+      **Accepted exception:** `drone_common` is an `INTERFACE` library and carries no compilation of
+      its own, so `target_compile_options(... PRIVATE)` cannot apply to it. Its headers are compiled —
+      and warned about — inside every target that includes them.)*
+- [x] **The Simulator never crashes** and never calls `exit()`; `main` always returns.
+      *(No `exit`/`abort` anywhere. `PluginLifecycleTest` covers the one failure mode that would crash
+      after `main` returns; valgrind reports zero leaks and zero errors on a full comparative run.)*
+- [x] **Errors are logged the moment they occur.**
+      *(`ErrorLogger::log` writes and flushes both sinks under one lock per call — nothing is buffered
+      for a later pass. `ErrorLogger.ConcurrentWritersProduceWholeLines` proves lines stay intact
+      under eight concurrent writers.)*
+- [x] **`dlclose` every handle**, and only after all plugin-derived objects *and* the registrar's
       factories are gone.
-- [ ] **No cached plugin instances** — recreate from the factory per run; never reload a `.so`.
-- [ ] **mp-units types throughout**; no raw `double` for physical quantities.
+      *(phase 09a — the four steps are now written out explicitly in `main.cpp` rather than left to
+      scope and declaration order. `~PluginLibrary` is the only `dlclose` site;
+      `PluginLoader::releaseAll()` merely clears the vector that triggers it.
+      `PluginLifecycleTest.TheTeardownOrderSurvivesAFullLoadClaimDestroySequence` pins the ordering,
+      including a deliberately-taken factory copy — the case that segfaulted in the phase-01 spike.)*
+- [x] **No cached plugin instances** — recreate from the factory per run; never reload a `.so`.
+      *(Both factories are invoked inside `SimulationRunFactoryImpl::create`, so every run gets fresh
+      instances. Libraries are loaded once up front on the main thread and never reloaded.)*
+- [x] **mp-units types throughout**; no raw `double` for physical quantities.
+      *(**Accepted exception:** `UserCommon/VoxelGrid.h` stores `resolution_cm_` and its origin as raw
+      `double` centimetres. Index arithmetic needs a scalar, so the units are stripped once at the
+      grid boundary and re-attached on the way out via `centreOf`; spreading that conversion across
+      every caller would be strictly worse. Not exceptions: `mission_score` and
+      `MapsComparison::compare` return a dimensionless score, not a physical quantity.)*
 - [x] **Thread count obeys the rule**: 1, or 1 + N (N ≥ 2), never exactly 2, never idle threads.
       *(phase 08 — `ThreadPoolExecutor::workerCountFor`, asserted as a table plus a swept invariant
       test over every `requested` × `task_count` pair in range.)*
-- [ ] **Algorithm minimums**: never fly into walls; map everything in the configured boundaries;
+- [x] **Algorithm minimums**: never fly into walls; map everything in the configured boundaries;
       be efficient and exact.
+      *(The frontier search enqueues only cells the map already reports `Empty`, so every emitted path
+      runs through scanned-free space; `DroneControlImpl` additionally checks the whole swept path,
+      not just the destination. The phase-06 heading-wrap fix removed the last collision case — 24/24
+      runs complete clean. Exploration terminates because an already-surveyed cell is never chosen as
+      a target, so the candidate set strictly shrinks.)*
 
 ### Submission package (`ex3_323998450_211633813.zip`)
 

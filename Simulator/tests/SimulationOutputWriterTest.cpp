@@ -111,6 +111,11 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief The document has a single `score_report` root carrying the run's metadata.
+ * @note `metric`, `score_range` and `error_score` are written so the file explains its own numbers -
+ *       a reader can tell -1 is a sentinel without knowing the simulator's conventions.
+ */
 TEST_F(SimulationOutputWriterTest, EmitsTheMetadataUnderOneRoot) {
     report_.runs = {makeRun(50.0, 10, "a.npy", 5.0), makeRun(70.0, 20, "b.npy", 5.0)};
 
@@ -125,6 +130,9 @@ TEST_F(SimulationOutputWriterTest, EmitsTheMetadataUnderOneRoot) {
     EXPECT_EQ(node["error_score"].as<int>(), -1);
 }
 
+/**
+ * @brief Summary statistics are computed over scored runs only, while the counts report all of them.
+ */
 TEST_F(SimulationOutputWriterTest, SummaryStatisticsExcludeTheErrorSentinel) {
     /**
      * @note Two scored runs at 40 and 60 plus two failures. The average must be 50, not 24.5 - a
@@ -146,6 +154,11 @@ TEST_F(SimulationOutputWriterTest, SummaryStatisticsExcludeTheErrorSentinel) {
     EXPECT_DOUBLE_EQ(summary["max_score"].as<double>(), 60.0);
 }
 
+/**
+ * @brief Runs nest under their simulation and mission, each labelled by its source YAML file.
+ * @note The path-based labelling the whole `CompositionPaths` side-channel exists to supply, since a
+ *       filename cannot be recovered from a parsed config struct.
+ */
 TEST_F(SimulationOutputWriterTest, RunsAreNestedAndLabelledBySourceFile) {
     report_.runs = {makeRun(50.0, 10, "a.npy", 5.0), makeRun(70.0, 20, "b.npy", 5.0)};
 
@@ -168,6 +181,11 @@ TEST_F(SimulationOutputWriterTest, RunsAreNestedAndLabelledBySourceFile) {
     EXPECT_DOUBLE_EQ(runs[1]["score"].as<double>(), 70.0);
 }
 
+/**
+ * @brief The nesting holds across several simulations, each with its own mission list.
+ * @note Also pins the consumption order: runs are taken in the manager's expansion order, which is
+ *       the unverifiable contract the positional labelling rests on.
+ */
 TEST_F(SimulationOutputWriterTest, NestingSpansSeveralSimulationsAndMissions) {
     simulator::CompositionPaths paths;
     paths.simulation_paths = {"simulation/a.yaml", "simulation/b.yaml"};
@@ -191,6 +209,9 @@ TEST_F(SimulationOutputWriterTest, NestingSpansSeveralSimulationsAndMissions) {
         << "runs are consumed in the manager's expansion order";
 }
 
+/**
+ * @brief A mission's reported resolution is taken from a run that actually scored.
+ */
 TEST_F(SimulationOutputWriterTest, MissionResolutionComesFromAScoredRun) {
     /**
      * @note The first run of this mission failed and therefore carries a default map config with
@@ -205,6 +226,11 @@ TEST_F(SimulationOutputWriterTest, MissionResolutionComesFromAScoredRun) {
     EXPECT_EQ(mission["resolution_request_status"].as<std::string>(), "ACCEPTED");
 }
 
+/**
+ * @brief A failed run still appears, with its sentinel score and the code that explains it.
+ * @note Dropping it would leave the report describing fewer runs than the composition asked for,
+ *       which reads as though the combination was never requested.
+ */
 TEST_F(SimulationOutputWriterTest, ErroredRunsAppearWithTheirCode) {
     report_.runs = {makeRun(-1.0, 0, "a.npy", 0.0), makeRun(80.0, 5, "b.npy", 5.0)};
 
@@ -216,6 +242,9 @@ TEST_F(SimulationOutputWriterTest, ErroredRunsAppearWithTheirCode) {
     EXPECT_EQ(runs[0]["error_ref"]["code"].as<std::string>(), "RUN_FAILED");
 }
 
+/**
+ * @brief When the paths do not describe the runs, the writer emits a flat list instead of guessing.
+ */
 TEST_F(SimulationOutputWriterTest, MismatchedPathsFallBackToAFlatListRatherThanWrongLabels) {
     /**
      * @note The paths describe two runs but the report holds three. Labelling positionally would
@@ -233,6 +262,11 @@ TEST_F(SimulationOutputWriterTest, MismatchedPathsFallBackToAFlatListRatherThanW
     EXPECT_EQ(node["runs"][2]["output_map"].as<std::string>(), "c.npy");
 }
 
+/**
+ * @brief An empty paths structure takes the same fallback as a mismatched one.
+ * @note The case component tests hit, since `loadComposition` may be called without a paths sink at
+ *       all - the writer must not require the side-channel to exist.
+ */
 TEST_F(SimulationOutputWriterTest, EmptyPathsAlsoDegradeGracefully) {
     report_.runs = {makeRun(10.0, 1, "a.npy", 5.0)};
 

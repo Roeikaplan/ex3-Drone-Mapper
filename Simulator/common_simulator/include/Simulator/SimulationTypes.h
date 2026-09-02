@@ -30,6 +30,8 @@ struct SimulationResult {
     SimulationConfigData simulation_config{};
     common::types::MissionConfigData mission_config{};
     ResolutionRequestStatus resolution_request_status = ResolutionRequestStatus::Ignored;
+    // Always exactly one entry: a SimulationResult is one run - one simulation x mission x
+    // drone x lidar combination - not a simulation aggregating its missions.
     std::vector<common::types::MissionRunResult> mission_results{};
     std::filesystem::path output_map_file{};
     common::types::MapConfig output_map_config{};

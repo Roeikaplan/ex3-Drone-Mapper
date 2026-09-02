@@ -84,6 +84,12 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief A freshly allocated map reads `Unmapped` everywhere, not `Empty`.
+ * @note The distinction is the whole basis of scoring and of frontier search: `Empty` is a claim the
+ *       drone proved, `Unmapped` means nobody has looked. A zero-filled buffer would say the wrong
+ *       one of those in every cell.
+ */
 TEST_F(Map3DImplTest, NewMapStartsEntirelyUnmapped) {
     const common::types::MapConfig config = cubeConfig(10.0, 1.0);
     const simulator::Map3DImpl map{simulator::Map3DImpl::makeEmptyArray(config), config};
@@ -92,6 +98,11 @@ TEST_F(Map3DImplTest, NewMapStartsEntirelyUnmapped) {
     EXPECT_EQ(map.atVoxel(pos(9.5, 9.5, 9.5)), common::types::VoxelOccupancy::Unmapped);
 }
 
+/**
+ * @brief Bounds are reported with an exclusive upper edge, and writes outside them are dropped.
+ * @note Dropping rather than wrapping is the point. An out-of-range index cast to an unsigned type
+ *       would land somewhere real inside the buffer and corrupt an unrelated cell.
+ */
 TEST_F(Map3DImplTest, ReportsBoundsAndDropsOutOfBoundsWrites) {
     const common::types::MapConfig config = cubeConfig(10.0, 1.0);
     simulator::Map3DImpl map{simulator::Map3DImpl::makeEmptyArray(config), config};
@@ -108,6 +119,11 @@ TEST_F(Map3DImplTest, ReportsBoundsAndDropsOutOfBoundsWrites) {
         << "an out-of-bounds write must be dropped, not wrapped into a real cell";
 }
 
+/**
+ * @brief All five occupancy values survive a save and reload unchanged.
+ * @note Three of the five are negative sentinels, so this fails immediately if the buffer is ever
+ *       read back as unsigned - the values would return as 253, 254 and 255.
+ */
 TEST_F(Map3DImplTest, EveryOccupancyValueRoundTripsThroughAFile) {
     const common::types::MapConfig config = cubeConfig(10.0, 1.0);
     const fs::path file = dir_ / "roundtrip.npy";
@@ -131,6 +147,11 @@ TEST_F(Map3DImplTest, EveryOccupancyValueRoundTripsThroughAFile) {
     EXPECT_EQ(reloaded.atVoxel(pos(4.5, 0.5, 0.5)), common::types::VoxelOccupancy::Unmapped);
 }
 
+/**
+ * @brief A voxel covers a whole resolution-sized cell, not just the point that was written.
+ * @note Checked at 2 cm rather than 1 cm precisely so that a coordinate and its cell differ - at unit
+ *       resolution an off-by-one in the index arithmetic would be invisible.
+ */
 TEST_F(Map3DImplTest, VoxelsSpanTheResolutionNotASinglePoint) {
     const common::types::MapConfig config = cubeConfig(10.0, 2.0);
     simulator::Map3DImpl map{simulator::Map3DImpl::makeEmptyArray(config), config};
@@ -144,6 +165,11 @@ TEST_F(Map3DImplTest, VoxelsSpanTheResolutionNotASinglePoint) {
         << "4.0 starts the next cell";
 }
 
+/**
+ * @brief A map with an offset covers world coordinates around that offset, not around the origin.
+ * @note `house_simulation.yaml` sets a height offset of 150, so an implementation that ignored the
+ *       offset would place that whole scenario's drone outside its own map.
+ */
 TEST_F(Map3DImplTest, OffsetShiftsTheGridIntoWorldCoordinates) {
     const common::types::MapConfig config = cubeConfig(10.0, 1.0, 100.0);
     simulator::Map3DImpl map{simulator::Map3DImpl::makeEmptyArray(config), config};
@@ -155,6 +181,9 @@ TEST_F(Map3DImplTest, OffsetShiftsTheGridIntoWorldCoordinates) {
     EXPECT_EQ(map.atVoxel(pos(105.5, 105.5, 105.5)), common::types::VoxelOccupancy::Occupied);
 }
 
+/**
+ * @brief A span that does not divide evenly still gets its partial trailing voxel.
+ */
 TEST_F(Map3DImplTest, PartialTrailingVoxelIsKept) {
     /**
      * @note A 10 cm span at 3 cm resolution needs four cells, not three: `ceil(10/3)`. The fourth is
@@ -167,6 +196,11 @@ TEST_F(Map3DImplTest, PartialTrailingVoxelIsKept) {
     EXPECT_FALSE(map.isInBounds(pos(12.0, 0.0, 0.0)));
 }
 
+/**
+ * @brief A zero resolution throws at allocation and yields a grid where every lookup is out of bounds.
+ * @note Two defences for the same degenerate config: refuse to build an array from it, and - if one
+ *       is built from a different config - never divide by it during a lookup.
+ */
 TEST_F(Map3DImplTest, NonPositiveResolutionIsRejectedRatherThanDividedBy) {
     common::types::MapConfig config = cubeConfig(10.0, 1.0);
     config.resolution = 0.0 * cm;
@@ -179,10 +213,18 @@ TEST_F(Map3DImplTest, NonPositiveResolutionIsRejectedRatherThanDividedBy) {
         << "a zero-resolution config has no grid, so every lookup is out of bounds";
 }
 
+/**
+ * @brief Constructing over a null array throws rather than deferring the failure to first use.
+ */
 TEST_F(Map3DImplTest, NullArrayIsRejected) {
     EXPECT_THROW(simulator::Map3DImpl{std::unique_ptr<NpyArray>{}}, std::invalid_argument);
 }
 
+/**
+ * @brief A shipped `.npy` scenario map loads and satisfies the one-byte-per-voxel storage contract.
+ * @note The only test here that reads real input rather than a generated fixture, so it is what
+ *       catches a dtype or dimensionality assumption that holds for our own writes but not theirs.
+ */
 TEST_F(Map3DImplTest, LoadingARealScenarioMap) {
     const fs::path map_file = fs::path{DRONE_SOURCE_DIR} / "inputs" / "map" / "scenario_small.npy";
     ASSERT_TRUE(fs::exists(map_file)) << map_file.string();
@@ -193,6 +235,11 @@ TEST_F(Map3DImplTest, LoadingARealScenarioMap) {
     EXPECT_GT(array->NumValue(), 0u);
 }
 
+/**
+ * @brief A missing map file throws rather than yielding an empty map.
+ * @note This is the exception the run factory relies on: it becomes `RUN_FAILED` and scores that
+ *       combination -1. Returning an empty map instead would score it as a legitimate bad result.
+ */
 TEST_F(Map3DImplTest, LoadingAMissingFileThrows) {
     EXPECT_THROW((void)simulator::Map3DImpl::loadArray(dir_ / "absent.npy"), std::runtime_error);
 }

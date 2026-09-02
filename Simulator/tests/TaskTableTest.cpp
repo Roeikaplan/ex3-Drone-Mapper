@@ -128,6 +128,11 @@ public:
     return composition;
 }
 
+/**
+ * @brief Two plugins enumerating into one table each own a contiguous, correctly-tagged block.
+ * @note Contiguity is what makes `resultsForPlugin` a slice rather than a filter, and the
+ *       `plugin_index` tag is what lets one flat dispatch serve every plugin at once.
+ */
 TEST(SimulationTaskTable, EachPluginOwnsAContiguousRangeOfCells) {
     std::atomic<std::size_t> counter{0};
     simulator::ErrorLogger logger;
@@ -162,6 +167,11 @@ TEST(SimulationTaskTable, EachPluginOwnsAContiguousRangeOfCells) {
     EXPECT_EQ(table.cell(4).factory, table.cell(7).factory);
 }
 
+/**
+ * @brief Slicing a shared table returns exactly one plugin's results, and nothing for a bad index.
+ * @note An out-of-range plugin yields an empty slice rather than throwing, so report assembly can
+ *       ask for a plugin that produced nothing without special-casing it.
+ */
 TEST(SimulationTaskTable, SlicingReturnsOnlyThatPluginsResults) {
     std::atomic<std::size_t> counter{0};
     simulator::ErrorLogger logger;
@@ -187,6 +197,11 @@ TEST(SimulationTaskTable, SlicingReturnsOnlyThatPluginsResults) {
     EXPECT_TRUE(table.resultsForPlugin(2).empty()) << "an out-of-range plugin yields nothing";
 }
 
+/**
+ * @brief The serial executor visits every index exactly once.
+ * @note The baseline the threaded executor is checked against: same contract, no threads, so a
+ *       failure here is a bug in the dispatch rather than a race.
+ */
 TEST(InlineExecutor, VisitsEveryIndexExactlyOnce) {
     simulator::InlineExecutor executor;
     std::vector<std::size_t> visits(5, 0);
@@ -197,6 +212,11 @@ TEST(InlineExecutor, VisitsEveryIndexExactlyOnce) {
     }
 }
 
+/**
+ * @brief A zero-length table simply runs nothing.
+ * @note Reachable in practice - a composition whose simulations were all rejected leaves no cells -
+ *       so it has to be a normal outcome rather than an edge case.
+ */
 TEST(InlineExecutor, AnEmptyTableIsNotAnError) {
     simulator::InlineExecutor executor;
     std::size_t calls = 0;
@@ -204,6 +224,9 @@ TEST(InlineExecutor, AnEmptyTableIsNotAnError) {
     EXPECT_EQ(calls, 0u);
 }
 
+/**
+ * @brief Results occupy their own slot by index, regardless of the order runs complete.
+ */
 TEST(SimulationTaskTable, ResultsLandInIndexOrderWhateverTheCompletionOrder) {
     /**
      * @note The assertion that actually protects phase 08. Executed backwards, cell 0 finishes
@@ -242,6 +265,9 @@ TEST(SimulationTaskTable, ResultsLandInIndexOrderWhateverTheCompletionOrder) {
     EXPECT_EQ(results[3].mission_config.max_steps, 200u);
 }
 
+/**
+ * @brief Running the three steps by hand yields the same report as `run()` produces in one call.
+ */
 TEST(SimulationTaskTable, TheSplitStepsReproduceWhatRunReturns) {
     /**
      * @note The property the orchestrator depends on: doing the three steps by hand at a wider scope

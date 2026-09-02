@@ -125,6 +125,9 @@ struct Rig {
     return command;
 }
 
+/**
+ * @brief The first call to the algorithm receives a null scan pointer, not an empty scan.
+ */
 TEST(DroneControl, TheFirstStepIsHandedANullScan) {
     /**
      * @note An empty scan would tell the algorithm it looked and saw nothing, which is a different
@@ -137,6 +140,9 @@ TEST(DroneControl, TheFirstStepIsHandedANullScan) {
     EXPECT_TRUE(rig.algorithm.firstScanWasNull());
 }
 
+/**
+ * @brief When one command carries both a move and a scan, the move is executed first.
+ */
 TEST(DroneControl, MovementHappensBeforeTheScanInTheSameCommand) {
     /**
      * @note The sensor reads the same GPS the controller does, so a scan taken first would describe
@@ -159,6 +165,11 @@ TEST(DroneControl, MovementHappensBeforeTheScanInTheSameCommand) {
                 1e-9);
 }
 
+/**
+ * @brief An advance beyond `max_advance` is refused, and the actuator is never called.
+ * @note The call-count assertion is the real content. Refusing only after commanding would leave the
+ *       drone somewhere the mission never approved, reported by an error claiming it had not moved.
+ */
 TEST(DroneControl, AnOverLargeAdvanceIsRefusedBeforeItIsCommanded) {
     types::MappingStepCommand command{};
     command.movement = move(types::MovementCommandType::Advance, 100.0);
@@ -171,6 +182,11 @@ TEST(DroneControl, AnOverLargeAdvanceIsRefusedBeforeItIsCommanded) {
     EXPECT_EQ(rig.movement.callCount(), 0u) << "refusal must happen before the actuator is touched";
 }
 
+/**
+ * @brief A rotation beyond `max_rotate` is refused, naming the limit it broke.
+ * @note The message is asserted, not just the status: a plugin author reading the error log needs to
+ *       know which of the three limits was exceeded.
+ */
 TEST(DroneControl, AnOverLargeRotationIsRefused) {
     types::MappingStepCommand command{};
     command.movement = move(types::MovementCommandType::Rotate, 180.0);
@@ -182,6 +198,11 @@ TEST(DroneControl, AnOverLargeRotationIsRefused) {
     EXPECT_NE(result.message.find("max_rotate"), std::string::npos);
 }
 
+/**
+ * @brief An elevation beyond `max_elevate` is refused.
+ * @note The third of the three per-command limits, each checked separately so that one shared bound
+ *       cannot accidentally stand in for all of them.
+ */
 TEST(DroneControl, AnOverLargeElevationIsRefused) {
     types::MappingStepCommand command{};
     command.movement = move(types::MovementCommandType::Elevate, 50.0);
@@ -193,6 +214,11 @@ TEST(DroneControl, AnOverLargeElevationIsRefused) {
     EXPECT_NE(result.message.find("max_elevate"), std::string::npos);
 }
 
+/**
+ * @brief A move within the drone's limits is still refused when it leaves the mission bounds.
+ * @note A different class of mistake from exceeding a drone limit - this command is one the drone
+ *       could physically perform - which is why the two checks report distinct messages.
+ */
 TEST(DroneControl, AMoveLeavingTheMissionBoundsIsRefused) {
     types::MappingStepCommand command{};
     command.movement = move(types::MovementCommandType::Advance, 30.0);
@@ -205,6 +231,11 @@ TEST(DroneControl, AMoveLeavingTheMissionBoundsIsRefused) {
     EXPECT_EQ(rig.movement.callCount(), 0u);
 }
 
+/**
+ * @brief A move ending in a cell already observed `Occupied` is refused.
+ * @note The straightforward half of the obstacle check. The swept-path case below is the half an
+ *       endpoint-only implementation would silently fail.
+ */
 TEST(DroneControl, AMoveEndingInAKnownObstacleIsRefused) {
     types::MappingStepCommand command{};
     command.movement = move(types::MovementCommandType::Advance, 10.0);
@@ -217,6 +248,11 @@ TEST(DroneControl, AMoveEndingInAKnownObstacleIsRefused) {
     EXPECT_EQ(rig.movement.callCount(), 0u);
 }
 
+/**
+ * @brief A move whose destination is clear but whose path crosses a known wall is refused.
+ * @note One of the two cases the file header calls out as existing because of an otherwise invisible
+ *       bug - it passes trivially against an endpoint-only check.
+ */
 TEST(DroneControl, AMovePassingThroughAKnownObstacleIsRefused) {
     /**
      * @note The whole point of checking the swept path rather than the destination. A 20 cm advance
@@ -238,6 +274,11 @@ TEST(DroneControl, AMovePassingThroughAKnownObstacleIsRefused) {
     EXPECT_EQ(rig.movement.callCount(), 0u);
 }
 
+/**
+ * @brief A wall the drone has never scanned is *not* refused - and that is the correct behaviour.
+ * @note Asserts a limitation rather than a guarantee, so the boundary of what this class can enforce
+ *       is recorded here instead of being rediscovered from a collision in a full run.
+ */
 TEST(DroneControl, AnUnobservedObstacleCannotBeRefused) {
     /**
      * @note Documenting the boundary of what this class can enforce. It has no ground truth, so a
@@ -254,6 +295,12 @@ TEST(DroneControl, AnUnobservedObstacleCannotBeRefused) {
     EXPECT_EQ(rig.movement.callCount(), 1u);
 }
 
+/**
+ * @brief A scan command reaches the map, not merely the sensor.
+ * @note Covers the wiring from `ILidar::scan` through `ScanResultToVoxels` into the output map. A
+ *       controller that scanned but never applied the result would leave the map permanently blank
+ *       while every step still reported success.
+ */
 TEST(DroneControl, AScanIsWrittenIntoTheMap) {
     Rig rig{{scanOnly()}};
 
@@ -264,6 +311,11 @@ TEST(DroneControl, AScanIsWrittenIntoTheMap) {
         << "the canned scan reports a single hit";
 }
 
+/**
+ * @brief `AlgorithmStatus::Finished` is translated to `DroneStepStatus::Completed`.
+ * @note The seam between the algorithm's vocabulary and the mission loop's. The loop breaks on
+ *       `Completed`, so a mistranslation would run the mission on to `max_steps` instead.
+ */
 TEST(DroneControl, FinishingMapsToCompleted) {
     types::MappingStepCommand command{};
     command.status = types::AlgorithmStatus::Finished;
@@ -273,6 +325,11 @@ TEST(DroneControl, FinishingMapsToCompleted) {
     EXPECT_EQ(rig.control.step().status, types::DroneStepStatus::Completed);
 }
 
+/**
+ * @brief `FinishedWithUnmappableVoxels` also completes rather than erroring.
+ * @note Giving up on cells that were never reachable is a finished mission, not a failed one.
+ *       Mapping it to `Error` would score the run -1 and discard a perfectly good map.
+ */
 TEST(DroneControl, FinishingWithUnmappableVoxelsAlsoCompletes) {
     types::MappingStepCommand command{};
     command.status = types::AlgorithmStatus::FinishedWithUnmappableVoxels;
@@ -283,6 +340,11 @@ TEST(DroneControl, FinishingWithUnmappableVoxelsAlsoCompletes) {
         << "an algorithm that gave up on unreachable cells still finished its mission";
 }
 
+/**
+ * @brief The step index advances once per step and is reflected in the reported state.
+ * @note `state()` is what the algorithm is handed on every call, so a counter that never advanced
+ *       would leave it unable to tell one step from the next.
+ */
 TEST(DroneControl, TheStepIndexAdvancesWithEachStep) {
     Rig rig{{scanOnly(), scanOnly(), scanOnly()}};
 

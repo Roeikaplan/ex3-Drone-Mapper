@@ -64,6 +64,11 @@ using mission_control::testing::FakeMap;
     return {types::LidarHit{distance_cm * cm, facing(0.0)}};
 }
 
+/**
+ * @brief A normal hit proves two things at once: the path is clear and the endpoint is solid.
+ * @note The third assertion is the load-bearing one. Nothing beyond the hit may be touched, because
+ *       the beam stopped there and saw nothing further - claiming otherwise would invent evidence.
+ */
 TEST(ScanResultToVoxels, AHitMarksThePathEmptyAndTheEndpointOccupied) {
     FakeMap map{100.0, 1.0};
 
@@ -78,6 +83,12 @@ TEST(ScanResultToVoxels, AHitMarksThePathEmptyAndTheEndpointOccupied) {
         << "beyond the hit the beam proved nothing";
 }
 
+/**
+ * @brief A miss clears the beam out to `z_max` and claims nothing solid.
+ * @note The sensor signals "nothing in range" with the largest representable distance rather than
+ *       omitting the beam, so the sentinel must be recognised *before* the value is used as a
+ *       length - marching to `DBL_MAX` would sweep far past the map instead of stopping at `z_max`.
+ */
 TEST(ScanResultToVoxels, AMissMarksTheWholeRangeEmpty) {
     FakeMap map{100.0, 1.0};
     const types::LidarScanResult scan = {
@@ -94,6 +105,9 @@ TEST(ScanResultToVoxels, AMissMarksTheWholeRangeEmpty) {
     EXPECT_EQ(map.countOf(types::VoxelOccupancy::Occupied), 0u);
 }
 
+/**
+ * @brief A hit nearer than `z_min` claims only `PotentiallyOccupied` - never `Empty`, never solid.
+ */
 TEST(ScanResultToVoxels, AZeroDistanceOnlyClaimsUncertainty) {
     /**
      * @note The sensor detected something nearer than `z_min` but cannot place it. Claiming a
@@ -114,6 +128,11 @@ TEST(ScanResultToVoxels, AZeroDistanceOnlyClaimsUncertainty) {
         << "beyond z_min the beam said nothing at all";
 }
 
+/**
+ * @brief The evidence ranking stops a later `Empty` sweep from erasing a measured wall.
+ * @note The case with teeth, as the file header says: every other test here would pass just as
+ *       happily against a converter that overwrote blindly.
+ */
 TEST(ScanResultToVoxels, AnEmptyClaimNeverErasesAMeasuredHit) {
     /**
      * @note The failure this guards against is subtle and progressive: without the ranking, a wall
@@ -135,6 +154,11 @@ TEST(ScanResultToVoxels, AnEmptyClaimNeverErasesAMeasuredHit) {
         << "a later sweep of empty space must not demolish a wall already measured";
 }
 
+/**
+ * @brief The ranking is an ordering, not a freeze: a real measurement replaces earlier uncertainty.
+ * @note The other direction of the previous test. `PotentiallyOccupied` must yield to `Occupied`, or
+ *       one unplaceable near-hit would permanently block a cell the sensor later resolved properly.
+ */
 TEST(ScanResultToVoxels, AMeasuredHitUpgradesAnUncertainCell) {
     FakeMap map{100.0, 1.0};
     const types::LidarConfigData config = lidarConfig(25.0, 50.0);
@@ -150,6 +174,11 @@ TEST(ScanResultToVoxels, AMeasuredHitUpgradesAnUncertainCell) {
         << "a real measurement outranks earlier uncertainty";
 }
 
+/**
+ * @brief The drone's heading is applied to hit angles, placing the scan in world coordinates.
+ * @note Two identical scans taken from one point at different headings must land on different cells.
+ *       Checked against the `0 deg = +X east, 90 deg = +Y south` convention the whole project shares.
+ */
 TEST(ScanResultToVoxels, TheDroneHeadingRotatesWhereTheScanLands) {
     /**
      * @note Hit angles are relative to the scan direction, so the heading must be added back exactly
@@ -170,6 +199,11 @@ TEST(ScanResultToVoxels, TheDroneHeadingRotatesWhereTheScanLands) {
         << "90 degrees points at +Y south";
 }
 
+/**
+ * @brief A beam leaving the map records the part inside it and drops the rest.
+ * @note Partial evidence is still evidence. Discarding the whole beam because its endpoint fell
+ *       outside would throw away clear space the drone genuinely observed on the way there.
+ */
 TEST(ScanResultToVoxels, SamplesOutsideTheMapAreDropped) {
     FakeMap map{20.0, 1.0};
 
@@ -182,6 +216,12 @@ TEST(ScanResultToVoxels, SamplesOutsideTheMapAreDropped) {
         << "the part of the path inside the map is still valid evidence";
 }
 
+/**
+ * @brief A scan whose origin lies outside the mapped region is discarded whole.
+ * @note A short-circuit at the top of `applyToMap` rather than a separate rule - a drone outside the
+ *       region it was asked to map has nothing to contribute, and checking once beats proving it
+ *       once per sample of every beam.
+ */
 TEST(ScanResultToVoxels, AScanFromOutsideTheMapIsDiscarded) {
     FakeMap map{20.0, 1.0};
 

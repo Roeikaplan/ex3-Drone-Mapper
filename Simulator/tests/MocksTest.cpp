@@ -69,6 +69,9 @@ using common::z_extent;
     return length.force_numerical_value_in(cm);
 }
 
+/**
+ * @brief The GPS returns the exact pose; `gps_resolution` is carried, not applied.
+ */
 TEST(MockGPS, ReportsTheExactPoseWithoutQuantizing) {
     /**
      * @note A 5 cm "precision" that actually applied would snap 12.3 to 10 or 15. It deliberately
@@ -81,6 +84,11 @@ TEST(MockGPS, ReportsTheExactPoseWithoutQuantizing) {
     EXPECT_DOUBLE_EQ(gps.heading().horizontal.force_numerical_value_in(deg), 37.0);
 }
 
+/**
+ * @brief At 0 degrees an advance moves along +X and leaves the other two axes untouched.
+ * @note Anchors the shared angle convention at its origin. Every beam, prediction and scan placement
+ *       in both projects is derived from this one definition.
+ */
 TEST(MockMovement, AdvanceAtZeroDegreesMovesEast) {
     simulator::MockGPS gps{pos(0.0, 0.0, 0.0), heading(0.0), 1.0 * cm};
     simulator::MockMovement movement{gps};
@@ -92,6 +100,11 @@ TEST(MockMovement, AdvanceAtZeroDegreesMovesEast) {
     EXPECT_NEAR(gps.position().z.force_numerical_value_in(cm), 0.0, 1e-9);
 }
 
+/**
+ * @brief At 90 degrees an advance moves along +Y, fixing the sign of the second axis.
+ * @note Together with the previous test this pins the handedness. A flipped sine would still pass a
+ *       test that only checked the magnitude of the movement.
+ */
 TEST(MockMovement, AdvanceAtNinetyDegreesMovesSouth) {
     simulator::MockGPS gps{pos(0.0, 0.0, 0.0), heading(90.0), 1.0 * cm};
     simulator::MockMovement movement{gps};
@@ -102,6 +115,11 @@ TEST(MockMovement, AdvanceAtNinetyDegreesMovesSouth) {
     EXPECT_NEAR(gps.position().y.force_numerical_value_in(cm), 10.0, 1e-9);
 }
 
+/**
+ * @brief Elevation moves purely vertically, and a negative distance descends.
+ * @note The two primitives are kept disjoint on purpose: if elevation drifted horizontally, the
+ *       mission control's prediction of where a move ends could no longer match the actuator.
+ */
 TEST(MockMovement, ElevateChangesOnlyAltitude) {
     simulator::MockGPS gps{pos(1.0, 2.0, 3.0), heading(45.0), 1.0 * cm};
     simulator::MockMovement movement{gps};
@@ -113,6 +131,9 @@ TEST(MockMovement, ElevateChangesOnlyAltitude) {
     EXPECT_NEAR(gps.position().z.force_numerical_value_in(cm), 1.5, 1e-9);
 }
 
+/**
+ * @brief Rotation turns in place, with left positive, and wraps the result into [0, 360).
+ */
 TEST(MockMovement, RotateChangesOnlyHeading) {
     simulator::MockGPS gps{pos(1.0, 2.0, 3.0), heading(0.0), 1.0 * cm};
     simulator::MockMovement movement{gps};
@@ -136,6 +157,9 @@ TEST(MockMovement, RotateChangesOnlyHeading) {
     EXPECT_NEAR(gps.position().x.force_numerical_value_in(cm), 1.0, 1e-9);
 }
 
+/**
+ * @brief After 200 turns the heading is still bounded, and an axis-aligned advance is still exact.
+ */
 TEST(MockMovement, TheHeadingStaysBoundedOverManyTurns) {
     /**
      * @note The regression this guards. Before wrapping, a long mission drove the heading into the
@@ -167,6 +191,11 @@ TEST(MockMovement, TheHeadingStaysBoundedOverManyTurns) {
     EXPECT_NEAR(gps.position().x.force_numerical_value_in(cm), 10.0, 1e-9);
 }
 
+/**
+ * @brief The actuator always succeeds, even for an absurd distance.
+ * @note Documents why `if (!result)` in the drone controller is currently unreachable: validation is
+ *       the caller's job, and an actuator that quietly refused would constrain plugins invisibly.
+ */
 TEST(MockMovement, NeverRefusesAnything) {
     /**
      * @note Flying far outside the world still reports success. Validation belongs to whoever drives
@@ -216,6 +245,11 @@ protected:
     std::unique_ptr<simulator::Map3DImpl> map_{};
 };
 
+/**
+ * @brief Beam count follows the assignment's rule: one beam, then four times as many per circle.
+ * @note Checked across several circle counts rather than at the shipped value of 3, since an
+ *       off-by-one in the accumulation happens to give the right answer for some counts.
+ */
 TEST_F(MockLidarTest, BeamCountFollowsThePowerOfFourRule) {
     const simulator::MockGPS gps{pos(10.0, 50.0, 50.0), heading(0.0), 1.0 * cm};
 
@@ -231,6 +265,9 @@ TEST_F(MockLidarTest, BeamCountFollowsThePowerOfFourRule) {
     }
 }
 
+/**
+ * @brief A sensor configured with zero circles returns an empty scan rather than one central beam.
+ */
 TEST_F(MockLidarTest, ZeroCirclesSeesNothing) {
     const simulator::MockGPS gps{pos(10.0, 50.0, 50.0), heading(0.0), 1.0 * cm};
     const simulator::MockLidar lidar{lidarConfig(0), *map_, gps};
@@ -238,6 +275,11 @@ TEST_F(MockLidarTest, ZeroCirclesSeesNothing) {
     EXPECT_TRUE(lidar.scan(heading(0.0)).empty());
 }
 
+/**
+ * @brief The central beam reports the distance to the wall, accurate to one marching step.
+ * @note The tolerance is the marching step itself, not slack: the sensor samples discretely, so the
+ *       reported distance is the first sample inside the wall rather than the exact face.
+ */
 TEST_F(MockLidarTest, TheCentralBeamFindsTheWall) {
     const simulator::MockGPS gps{pos(20.0, 50.0, 50.0), heading(0.0), 1.0 * cm};
     const simulator::MockLidar lidar{lidarConfig(1), *map_, gps};
@@ -248,6 +290,9 @@ TEST_F(MockLidarTest, TheCentralBeamFindsTheWall) {
         << "the wall starts at x=50 and the drone is at x=20, within one marching step";
 }
 
+/**
+ * @brief A wall closer than `z_min` reports the zero sentinel, not its true distance.
+ */
 TEST_F(MockLidarTest, AHitInsideTheMinimumRangeReportsZero) {
     /**
      * @note The drone sits 5 cm from the wall, well inside `z_min` of 10. The sensor can tell
@@ -261,6 +306,11 @@ TEST_F(MockLidarTest, AHitInsideTheMinimumRangeReportsZero) {
     EXPECT_DOUBLE_EQ(asCm(scan.front().distance), 0.0);
 }
 
+/**
+ * @brief A beam that hits nothing within `z_max` reports the maximum-distance sentinel.
+ * @note Every beam produces an entry either way, so the scan has one hit per beam and the converter
+ *       distinguishes the outcomes by value rather than by absence.
+ */
 TEST_F(MockLidarTest, ABeamIntoOpenSpaceReportsTheMissSentinel) {
     const simulator::MockGPS gps{pos(20.0, 50.0, 50.0), heading(0.0), 1.0 * cm};
     const simulator::MockLidar lidar{lidarConfig(1), *map_, gps};
@@ -271,6 +321,9 @@ TEST_F(MockLidarTest, ABeamIntoOpenSpaceReportsTheMissSentinel) {
         << "facing away from the wall there is nothing to hit within z_max";
 }
 
+/**
+ * @brief Reported hit angles are relative to the scan direction, not absolute world bearings.
+ */
 TEST_F(MockLidarTest, ReportedAnglesAreRelativeToTheScanDirection) {
     /**
      * @note The drone faces 90 deg and scans straight ahead. The reported angle must be the scan
@@ -285,6 +338,11 @@ TEST_F(MockLidarTest, ReportedAnglesAreRelativeToTheScanDirection) {
     EXPECT_DOUBLE_EQ(scan.front().angle.horizontal.force_numerical_value_in(deg), 0.0);
 }
 
+/**
+ * @brief The heading still determines where beams actually travel, even though angles report relative.
+ * @note The complement to the previous test, and the pair is the whole contract: the heading is
+ *       applied when tracing and *not* applied when reporting, so the consumer adds it back once.
+ */
 TEST_F(MockLidarTest, TheHeadingRotatesWhatTheBeamActuallyHits) {
     const simulator::MockGPS facing_wall{pos(20.0, 50.0, 50.0), heading(0.0), 1.0 * cm};
     const simulator::MockGPS facing_away{pos(20.0, 50.0, 50.0), heading(180.0), 1.0 * cm};

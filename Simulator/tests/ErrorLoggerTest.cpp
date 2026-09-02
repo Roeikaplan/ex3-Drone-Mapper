@@ -68,6 +68,11 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief A logger with no file still counts errors and still writes to stderr.
+ * @note The stderr-only mode is what components use before a results directory exists, so counting
+ *       has to work without a sink.
+ */
 TEST_F(ErrorLoggerTest, DefaultConstructedWritesNoFile) {
     simulator::ErrorLogger logger;
     logger.log("CODE", "message");
@@ -76,6 +81,11 @@ TEST_F(ErrorLoggerTest, DefaultConstructedWritesNoFile) {
     EXPECT_EQ(logger.errorCount(), 1u);
 }
 
+/**
+ * @brief Each entry is written as `[CODE] message`, exactly one line.
+ * @note The format is pinned because the log is read by people and greppable by code; the bracketed
+ *       code is what makes a whole run's failures countable per kind.
+ */
 TEST_F(ErrorLoggerTest, WritesCodeAndMessage) {
     const fs::path file = dir_ / "errors.log";
     {
@@ -88,6 +98,11 @@ TEST_F(ErrorLoggerTest, WritesCodeAndMessage) {
     EXPECT_EQ(lines.front(), "[PLUGIN_LOAD_FAILED] libfoo.so: undefined symbol");
 }
 
+/**
+ * @brief Entries accumulate in call order, and `logInputError` writes to the same file as `log`.
+ * @note ex3 has a single sink: the two methods differ only in which counters they bump, not in where
+ *       the line lands.
+ */
 TEST_F(ErrorLoggerTest, AppendsAcrossCalls) {
     const fs::path file = dir_ / "errors.log";
     {
@@ -103,6 +118,9 @@ TEST_F(ErrorLoggerTest, AppendsAcrossCalls) {
     EXPECT_EQ(lines[2], "[C] third");
 }
 
+/**
+ * @brief A log path whose parent does not yet exist is created rather than refused.
+ */
 TEST_F(ErrorLoggerTest, CreatesMissingParentDirectories) {
     const fs::path file = dir_ / "nested" / "deeper" / "errors.log";
     {
@@ -113,6 +131,11 @@ TEST_F(ErrorLoggerTest, CreatesMissingParentDirectories) {
     EXPECT_TRUE(fs::exists(file));
 }
 
+/**
+ * @brief Input errors count towards both totals, so the two counters answer different questions.
+ * @note `errorCount` answers whether anything went wrong at all; `inputErrorCount` answers whether
+ *       the input was merely malformed but usable. A recovered config error is both.
+ */
 TEST_F(ErrorLoggerTest, CountsTotalAndInputErrorsSeparately) {
     simulator::ErrorLogger logger{dir_ / "errors.log"};
     logger.log("A", "one");
@@ -123,6 +146,9 @@ TEST_F(ErrorLoggerTest, CountsTotalAndInputErrorsSeparately) {
     EXPECT_EQ(logger.inputErrorCount(), 2u);
 }
 
+/**
+ * @brief A logger that cannot open its file degrades to stderr instead of throwing.
+ */
 TEST_F(ErrorLoggerTest, UnopenablePathDegradesInsteadOfThrowing) {
     /**
      * @note The existing *directory* is handed over as if it were a log file, so the open must fail.
@@ -136,6 +162,11 @@ TEST_F(ErrorLoggerTest, UnopenablePathDegradesInsteadOfThrowing) {
     });
 }
 
+/**
+ * @brief Eight threads logging at once produce whole, well-formed lines - never torn or interleaved.
+ * @note The logger is shared by every worker in the pool, so this is the property that keeps a
+ *       concurrent run's error log readable at all.
+ */
 TEST_F(ErrorLoggerTest, ConcurrentWritesProduceWholeLines) {
     constexpr int kThreads = 8;
     constexpr int kPerThread = 200;

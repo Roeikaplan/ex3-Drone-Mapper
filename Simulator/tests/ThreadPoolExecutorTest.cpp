@@ -54,6 +54,9 @@ namespace fs = std::filesystem;
     return std::set<std::thread::id>(owners.begin(), owners.end()).size();
 }
 
+/**
+ * @brief The worker-count rule stated as a table, one row per clause of the assignment.
+ */
 TEST(ThreadPoolExecutor, TheThreadRuleAsATable) {
     /**
      * @note Each row is a clause of the assignment's rule. A worker count of 0 means the calling
@@ -67,6 +70,11 @@ TEST(ThreadPoolExecutor, TheThreadRuleAsATable) {
     EXPECT_EQ(simulator::ThreadPoolExecutor{4}.workerCountFor(0), 0u) << "no tasks, no threads";
 }
 
+/**
+ * @brief Across every requested count and task count, the executor never spawns exactly one worker.
+ * @note Exhaustive over the interesting range rather than spot-checked, because the forbidden case
+ *       arises from two rules interacting and is easy to reintroduce by simplifying either one.
+ */
 TEST(ThreadPoolExecutor, TheLiveThreadCountIsNeverExactlyTwo) {
     /**
      * @note The one place the assignment's two capping rules collide. Capping at `min(N, tasks)`
@@ -86,6 +94,11 @@ TEST(ThreadPoolExecutor, TheLiveThreadCountIsNeverExactlyTwo) {
     }
 }
 
+/**
+ * @brief A request for one thread runs every task on the calling thread, spawning nothing.
+ * @note Not merely an optimisation: one worker plus a blocked main would be the live total of two
+ *       that the rule forbids.
+ */
 TEST(ThreadPoolExecutor, ASingleThreadRunsEverythingOnTheCaller) {
     simulator::ThreadPoolExecutor executor{1};
     const std::vector<std::thread::id> owners = recordThreads(executor, 10);
@@ -96,6 +109,9 @@ TEST(ThreadPoolExecutor, ASingleThreadRunsEverythingOnTheCaller) {
     }
 }
 
+/**
+ * @brief With workers spawned, every task runs on a worker and none on the caller.
+ */
 TEST(ThreadPoolExecutor, WorkersDoTheWorkAndTheCallerDoesNot) {
     simulator::ThreadPoolExecutor executor{3};
     const std::vector<std::thread::id> owners = recordThreads(executor, 200);
@@ -112,12 +128,20 @@ TEST(ThreadPoolExecutor, WorkersDoTheWorkAndTheCallerDoesNot) {
     }
 }
 
+/**
+ * @brief Asking for more threads than there are tasks spawns no thread with nothing to do.
+ */
 TEST(ThreadPoolExecutor, MoreThreadsThanTasksSpawnsNoneIdle) {
     simulator::ThreadPoolExecutor executor{16};
     const std::vector<std::thread::id> owners = recordThreads(executor, 3);
     EXPECT_LE(distinctThreads(owners), 3u);
 }
 
+/**
+ * @brief Under real concurrency every index runs exactly once - never skipped, never repeated.
+ * @note 500 tasks over 4 workers, counted atomically. A task claimed twice would double-run a
+ *       mission and overwrite its own output map; one skipped would leave a hole in the report.
+ */
 TEST(ThreadPoolExecutor, EveryIndexRunsExactlyOnce) {
     simulator::ThreadPoolExecutor executor{4};
 
@@ -136,6 +160,9 @@ TEST(ThreadPoolExecutor, EveryIndexRunsExactlyOnce) {
     }
 }
 
+/**
+ * @brief An empty table spawns no threads and invokes nothing.
+ */
 TEST(ThreadPoolExecutor, AnEmptyTableSpawnsNothing) {
     simulator::ThreadPoolExecutor executor{8};
     std::size_t calls = 0;
@@ -143,6 +170,9 @@ TEST(ThreadPoolExecutor, AnEmptyTableSpawnsNothing) {
     EXPECT_EQ(calls, 0u);
 }
 
+/**
+ * @brief Results land in index order even when completion order is deliberately scrambled.
+ */
 TEST(ThreadPoolExecutor, ResultsLandInIndexOrderWhateverTheSchedule) {
     /**
      * @note The property the whole report pipeline rests on. The work is jittered so that completion
@@ -174,6 +204,11 @@ TEST(ThreadPoolExecutor, ResultsLandInIndexOrderWhateverTheSchedule) {
         << "the jitter failed to reorder anything, so this run proved nothing";
 }
 
+/**
+ * @brief Eight pool workers logging concurrently produce whole lines, never two on one row.
+ * @note The executor and the logger tested together rather than separately, since this is exactly
+ *       how they meet in a real run.
+ */
 TEST(ErrorLogger, ConcurrentWritersProduceWholeLines) {
     /**
      * @note The logger is the only synchronised object in the design, so this is the one place a lock

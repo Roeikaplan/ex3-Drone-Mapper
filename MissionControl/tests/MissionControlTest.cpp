@@ -132,6 +132,11 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief The mission ends the moment the algorithm reports `Finished`, well inside its budget.
+ * @note The step count matters as much as the status: the finishing step is counted, and nothing
+ *       runs after it.
+ */
 TEST_F(MissionControlTest, StopsWhenTheAlgorithmReportsFinished) {
     types::MappingStepCommand finished{};
     finished.status = types::AlgorithmStatus::Finished;
@@ -144,6 +149,11 @@ TEST_F(MissionControlTest, StopsWhenTheAlgorithmReportsFinished) {
     EXPECT_TRUE(result.errors.empty());
 }
 
+/**
+ * @brief An algorithm that never finishes is stopped by `max_steps`, reported as `MaxSteps`.
+ * @note The budget is the only thing standing between a non-terminating plugin and a run that never
+ *       returns, so `MaxSteps` is a normal outcome rather than a failure.
+ */
 TEST_F(MissionControlTest, RunsToTheStepBudgetWhenTheAlgorithmNeverFinishes) {
     Rig rig{{scanOnly()}, 5, dir_ / "map.npy", false};
     const types::MissionRunResult result = rig.control->runMission();
@@ -152,6 +162,11 @@ TEST_F(MissionControlTest, RunsToTheStepBudgetWhenTheAlgorithmNeverFinishes) {
     EXPECT_EQ(result.steps, 5u);
 }
 
+/**
+ * @brief A refused command ends the mission and surfaces as a `DRONE_STEP_ERROR`.
+ * @note The mission does not skip the bad step and carry on. Replanning around a command the
+ *       algorithm should not have issued would hide the fault from the report entirely.
+ */
 TEST_F(MissionControlTest, ADroneErrorEndsTheMissionAndIsReported) {
     types::MappingStepCommand illegal{};
     illegal.movement = types::MovementCommand{};
@@ -167,6 +182,9 @@ TEST_F(MissionControlTest, ADroneErrorEndsTheMissionAndIsReported) {
     EXPECT_EQ(result.errors.front().code, "DRONE_STEP_ERROR");
 }
 
+/**
+ * @brief The output map is written once, at the end, not once per step.
+ */
 TEST_F(MissionControlTest, TheMapIsSavedExactlyOnce) {
     /**
      * @note Saving per step would be thousands of writes per mission for a map only the final state
@@ -180,6 +198,11 @@ TEST_F(MissionControlTest, TheMapIsSavedExactlyOnce) {
     EXPECT_EQ(rig.map.lastSavePath(), dir_ / "map.npy");
 }
 
+/**
+ * @brief A mission that ends in error still saves its partial map.
+ * @note The run scores -1 either way, so the map is kept for inspection rather than for scoring -
+ *       a failed run is exactly the one someone will want to look at.
+ */
 TEST_F(MissionControlTest, TheMapIsStillSavedAfterAFailedMission) {
     types::MappingStepCommand illegal{};
     illegal.movement = types::MovementCommand{};
@@ -194,6 +217,11 @@ TEST_F(MissionControlTest, TheMapIsStillSavedAfterAFailedMission) {
         << "a partial map is still worth inspecting even though the run scores -1";
 }
 
+/**
+ * @brief Without `-verbose` no trace file is created at all.
+ * @note The negative case is what gives the positive one meaning: a trace that always appeared would
+ *       make the flag decorative.
+ */
 TEST_F(MissionControlTest, NoTraceFileWithoutVerbose) {
     Rig rig{{scanOnly()}, 3, dir_ / "map.npy", false};
     (void)rig.control->runMission();
@@ -202,6 +230,11 @@ TEST_F(MissionControlTest, NoTraceFileWithoutVerbose) {
         << "the file's absence is what makes its presence meaningful";
 }
 
+/**
+ * @brief With `-verbose` the trace carries a header plus exactly one row per step.
+ * @note Also pins the column set and the command encoding, since the trace is a file other tools and
+ *       people read - the earlier scan-only row must show `none` rather than an empty field.
+ */
 TEST_F(MissionControlTest, VerboseWritesOneRowPerStep) {
     types::MappingStepCommand advance{};
     advance.movement = types::MovementCommand{};
@@ -230,6 +263,9 @@ TEST_F(MissionControlTest, VerboseWritesOneRowPerStep) {
         << "a scan-only step carries no movement";
 }
 
+/**
+ * @brief A command that was refused still appears in the trace, marked as an error.
+ */
 TEST_F(MissionControlTest, TheTraceRecordsARefusedCommand) {
     /**
      * @note The command is recorded before validation, so the row that explains a stalled mission is
@@ -251,6 +287,12 @@ TEST_F(MissionControlTest, TheTraceRecordsARefusedCommand) {
     EXPECT_NE(contents.str().find("error"), std::string::npos);
 }
 
+/**
+ * @brief A `max_steps` of zero calls the algorithm not once, yet still saves a map.
+ * @note The degenerate budget has to produce a well-formed run rather than a special case: the
+ *       simulator scores every combination the composition described, so a missing output file
+ *       would look like a crash rather than like a mission that was given nothing to do.
+ */
 TEST_F(MissionControlTest, AZeroStepBudgetDoesNothingButStillSaves) {
     Rig rig{{scanOnly()}, 0, dir_ / "map.npy", false};
     const types::MissionRunResult result = rig.control->runMission();

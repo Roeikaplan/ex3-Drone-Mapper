@@ -176,6 +176,9 @@ private:
     return state;
 }
 
+/**
+ * @brief The mission opens with a survey rather than a move.
+ */
 TEST(MappingAlgorithm, TheFirstCommandIsAScanNotAMove) {
     /**
      * @note The drone's own cell starts `Unmapped`, so there is nowhere the search could legally
@@ -191,6 +194,11 @@ TEST(MappingAlgorithm, TheFirstCommandIsAScanNotAMove) {
     EXPECT_EQ(command.status, types::AlgorithmStatus::Working);
 }
 
+/**
+ * @brief The opening survey is six scans, one per axis direction.
+ * @note All six are issued unconditionally, before anything is known. Scanning only where something
+ *       is already suspected would make the first cycle depend on a picture that does not exist yet.
+ */
 TEST(MappingAlgorithm, TheSurveyIsSixScansCoveringEveryAxis) {
     HandBuiltMap map{10, 5.0};
     MappingAlgorithmImpl planner = makePlanner(map, permissiveDrone(5.0));
@@ -203,6 +211,13 @@ TEST(MappingAlgorithm, TheSurveyIsSixScansCoveringEveryAxis) {
     }
 }
 
+/**
+ * @brief A route through observed `Empty` space is compiled into movement commands.
+ * @note The survey is what unlocks travel at all: only cells an actual scan proved `Empty` are
+ *       traversable, so this is the first call that can legally produce a movement.
+ * @note The emitted command is the advance itself rather than a turn, because the drone already
+ *       faces along the route. `TurnsBeforeAdvancingWhenTheRouteChangesAxis` covers the other case.
+ */
 TEST(MappingAlgorithm, TravelsToAFrontierThroughObservedEmptySpace) {
     HandBuiltMap map{10, 5.0};
     /**
@@ -222,6 +237,11 @@ TEST(MappingAlgorithm, TravelsToAFrontierThroughObservedEmptySpace) {
         << "already facing east, so no turn is needed first";
 }
 
+/**
+ * @brief **The safety invariant**: a frontier reachable only through `Unmapped` cells is refused.
+ * @note The most important case in the file. A violation cannot be caught anywhere downstream, so it
+ *       would surface as a collision in a full run rather than as a failing assertion here.
+ */
 TEST(MappingAlgorithm, NeverRoutesThroughUnobservedSpace) {
     /**
      * @note **The safety invariant.** The only frontier sits beyond a gap of `Unmapped` cells. The
@@ -243,6 +263,11 @@ TEST(MappingAlgorithm, NeverRoutesThroughUnobservedSpace) {
     EXPECT_NE(command.status, types::AlgorithmStatus::Working);
 }
 
+/**
+ * @brief `PotentiallyOccupied` is impassable, exactly like `Occupied`.
+ * @note The same invariant as the previous test, for the other non-`Empty` value a scan can produce.
+ *       Only cells proven `Empty` may be traversed - "not known to be a wall" is not good enough.
+ */
 TEST(MappingAlgorithm, NeverRoutesThroughPotentiallyOccupiedSpace) {
     /**
      * @note `PotentiallyOccupied` exists precisely because the sensor detected something it could not
@@ -262,6 +287,12 @@ TEST(MappingAlgorithm, NeverRoutesThroughPotentiallyOccupiedSpace) {
     EXPECT_FALSE(command.movement.has_value());
 }
 
+/**
+ * @brief A route that changes axis emits the rotation before the advance.
+ * @note The drone advances along its heading, so the two commands issued in the wrong order would
+ *       travel along the *old* axis. The mission control would accept that - the command is legal
+ *       and within limits - and the drone would simply end up somewhere else.
+ */
 TEST(MappingAlgorithm, TurnsBeforeAdvancingWhenTheRouteChangesAxis) {
     HandBuiltMap map{10, 5.0};
     map.putEmptyRun({5, 5, 5}, 4, {0, 1, 0});
@@ -277,6 +308,11 @@ TEST(MappingAlgorithm, TurnsBeforeAdvancingWhenTheRouteChangesAxis) {
         << "the route runs south while the drone faces east";
 }
 
+/**
+ * @brief A vertical route elevates directly, with no rotation first.
+ * @note The counterpart to the axis-change case above: altitude is not a bearing, so `elevate` is
+ *       independent of heading and a turn inserted here would be a step spent achieving nothing.
+ */
 TEST(MappingAlgorithm, AVerticalHopElevatesWithoutTurning) {
     HandBuiltMap map{10, 5.0};
     map.putEmptyRun({5, 5, 5}, 4, {0, 0, 1});
@@ -292,6 +328,11 @@ TEST(MappingAlgorithm, AVerticalHopElevatesWithoutTurning) {
         << "altitude is not a bearing, so there is nothing to turn toward";
 }
 
+/**
+ * @brief Every emitted command fits inside the drone's per-command limits.
+ * @note The planner must split a whole-voxel hop into micro-steps rather than assume the drone can
+ *       cross a cell in one command. All three primitives are checked, since each has its own limit.
+ */
 TEST(MappingAlgorithm, EveryEmittedCommandRespectsTheDronesLimits) {
     /**
      * @note A drone that can only manage a fifth of a voxel per command. Emitting a whole hop would
@@ -328,6 +369,11 @@ TEST(MappingAlgorithm, EveryEmittedCommandRespectsTheDronesLimits) {
     }
 }
 
+/**
+ * @brief A region with no frontier left terminates as `Finished`.
+ * @note Every cell is `Empty` and none borders `Unmapped` space, so the search finds no target at
+ *       all. This is the clean ending, and the one the next test is deliberately distinguished from.
+ */
 TEST(MappingAlgorithm, AFullyObservedRegionFinishesCleanly) {
     HandBuiltMap map{3, 5.0};
     for (std::int64_t i = 0; i < 3; ++i) {
@@ -348,6 +394,12 @@ TEST(MappingAlgorithm, AFullyObservedRegionFinishesCleanly) {
         << "nothing borders unmapped space, so there is no frontier left";
 }
 
+/**
+ * @brief A sealed pocket terminates as `FinishedWithUnmappableVoxels`, not `Finished`.
+ * @note The distinction is real information for the report: a region sealed behind `Occupied` cells
+ *       was never observable at all, which is a different outcome from having covered everything.
+ *       Collapsing the two statuses would make a walled-off room indistinguishable from success.
+ */
 TEST(MappingAlgorithm, AnUnreachablePocketIsReportedAsUnmappable) {
     HandBuiltMap map{4, 5.0};
     for (std::int64_t i = 0; i < 4; ++i) {
@@ -373,6 +425,12 @@ TEST(MappingAlgorithm, AnUnreachablePocketIsReportedAsUnmappable) {
     EXPECT_EQ(command.status, types::AlgorithmStatus::FinishedWithUnmappableVoxels);
 }
 
+/**
+ * @brief Once exploration ends the planner stays finished and stops searching.
+ * @note The latch is what stops a completed run re-searching the whole grid on every remaining step
+ *       of the mission's budget. On the large scenarios that would be a ~216,000-cell search per
+ *       step, for however many thousand steps `max_steps` still allows.
+ */
 TEST(MappingAlgorithm, FinishingLatchesSoLaterCallsAreCheap) {
     HandBuiltMap map{3, 5.0};
     for (std::int64_t i = 0; i < 3; ++i) {
@@ -396,6 +454,12 @@ TEST(MappingAlgorithm, FinishingLatchesSoLaterCallsAreCheap) {
     }
 }
 
+/**
+ * @brief A drone outside the mapped region terminates instead of guessing a move.
+ * @note There is no cell to plan from, so any movement would be invented rather than derived from
+ *       the map - the one path by which a bad configuration could turn into a collision. Stopping
+ *       also covers a degenerate grid, which fails the same lookup.
+ */
 TEST(MappingAlgorithm, ADroneOutsideTheRegionStopsRatherThanGuessing) {
     HandBuiltMap map{5, 5.0};
 
@@ -411,6 +475,12 @@ TEST(MappingAlgorithm, ADroneOutsideTheRegionStopsRatherThanGuessing) {
     EXPECT_EQ(command.status, types::AlgorithmStatus::Finished);
 }
 
+/**
+ * @brief Axis counts round up, so a partial trailing voxel is still a voxel.
+ * @note `ceil` rather than truncation: 10 cm at 3 cm resolution needs four cells, and truncating to
+ *       three would leave the final centimetre outside the grid - unmappable by construction rather
+ *       than by obstruction. Non-positive spans give 0 instead of a negative count.
+ */
 TEST(VoxelGridTest, AxisCountKeepsAPartialTrailingVoxel) {
     EXPECT_EQ(VoxelGrid::axisCount(10.0, 3.0), 4) << "ceil(10/3), not 3";
     EXPECT_EQ(VoxelGrid::axisCount(9.0, 3.0), 3);
@@ -418,6 +488,12 @@ TEST(VoxelGridTest, AxisCountKeepsAPartialTrailingVoxel) {
     EXPECT_EQ(VoxelGrid::axisCount(-5.0, 3.0), 0);
 }
 
+/**
+ * @brief A cell's centre maps back to the cell it came from.
+ * @note The planner converts both ways on every step - index to world to emit a move, world to index
+ *       to read the map - so a round trip that landed one cell over would have it plan for one voxel
+ *       while reading the occupancy of another.
+ */
 TEST(VoxelGridTest, CentreRoundTripsThroughIndexOf) {
     const HandBuiltMap map{7, 5.0};
     const VoxelGrid& grid = map.grid();
@@ -432,6 +508,12 @@ TEST(VoxelGridTest, CentreRoundTripsThroughIndexOf) {
     }
 }
 
+/**
+ * @brief Linear and 3-D indices convert to each other without loss, across the whole grid.
+ * @note The frontier search works in 3-D indices while its scratch buffers are flat arrays keyed by
+ *       linear index, so every visit stamp and parent link depends on this pairing being exact. A
+ *       mismatch would corrupt the reconstructed route rather than fail loudly.
+ */
 TEST(VoxelGridTest, LinearIndexRoundTrips) {
     const HandBuiltMap map{6, 5.0};
     const VoxelGrid& grid = map.grid();
@@ -441,6 +523,12 @@ TEST(VoxelGridTest, LinearIndexRoundTrips) {
     }
 }
 
+/**
+ * @brief A grid with no usable resolution reports itself unusable and maps nothing.
+ * @note A zero resolution gives no cells to divide the region into. Reporting that up front is what
+ *       lets the planner bail out via `indexOf` rather than dividing by it - the degenerate-geometry
+ *       half of `ADroneOutsideTheRegionStopsRatherThanGuessing`.
+ */
 TEST(VoxelGridTest, AnUnusableGridRejectsEverything) {
     types::MapConfig config{};
     config.boundaries.max_x = 10.0 * x_extent[cm];

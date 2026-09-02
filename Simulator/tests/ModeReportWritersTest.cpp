@@ -109,6 +109,9 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief Competitive ranking is by total score, highest first.
+ */
 TEST_F(ModeReportWritersTest, CompetitiveRanksByScoreDescending) {
     input_.outcomes = {outcome("low.so", {run(10.0, 5)}), outcome("high.so", {run(90.0, 5)}),
                        outcome("mid.so", {run(50.0, 5)})};
@@ -122,6 +125,9 @@ TEST_F(ModeReportWritersTest, CompetitiveRanksByScoreDescending) {
     EXPECT_DOUBLE_EQ(summary[0]["total_score"].as<double>(), 90.0);
 }
 
+/**
+ * @brief A tie on score is broken by fewer steps, so the faster plugin wins.
+ */
 TEST_F(ModeReportWritersTest, CompetitiveBreaksTiesByFewerSteps) {
     /**
      * @note The one place a slower plugin loses to an equally accurate faster one. Steps do no
@@ -136,6 +142,9 @@ TEST_F(ModeReportWritersTest, CompetitiveBreaksTiesByFewerSteps) {
     EXPECT_EQ(summary[0]["total_steps"].as<std::size_t>(), 100u);
 }
 
+/**
+ * @brief Totals include the -1 sentinel rather than skipping failed runs.
+ */
 TEST_F(ModeReportWritersTest, TotalsSumEveryRunIncludingFailures) {
     /**
      * @note A plugin that crashed on one run of three must rank below one that completed all three,
@@ -150,6 +159,11 @@ TEST_F(ModeReportWritersTest, TotalsSumEveryRunIncludingFailures) {
     EXPECT_EQ(summary[0]["total_steps"].as<std::size_t>(), 20u);
 }
 
+/**
+ * @brief A plugin that never loaded is named under `errors:` and absent from the ranking.
+ * @note It has no report to summarise, so naming it here is the only way the document accounts for
+ *       a folder entry that was asked for and produced nothing.
+ */
 TEST_F(ModeReportWritersTest, APluginThatCouldNotLoadIsNamedUnderErrors) {
     input_.failed_to_load = {"NotAPlugin.so"};
     input_.outcomes = {outcome("good.so", {run(50.0, 5)})};
@@ -162,6 +176,9 @@ TEST_F(ModeReportWritersTest, APluginThatCouldNotLoadIsNamedUnderErrors) {
     EXPECT_EQ(report["errors"][0].as<std::string>(), "NotAPlugin.so");
 }
 
+/**
+ * @brief A plugin that loaded but failed every run is also moved to `errors:`, not ranked last.
+ */
 TEST_F(ModeReportWritersTest, APluginWhoseEveryRunFailedIsNamedUnderErrors) {
     /**
      * @note It did not score poorly; it did not function. Ranking it last would suggest it merely
@@ -178,6 +195,11 @@ TEST_F(ModeReportWritersTest, APluginWhoseEveryRunFailedIsNamedUnderErrors) {
     EXPECT_EQ(report["errors"][0].as<std::string>(), "broken.so");
 }
 
+/**
+ * @brief A plugin that failed only some runs stays in the ranking, carrying its sentinels.
+ * @note The boundary of the previous rule: partial failure is a bad result, total failure is not a
+ *       result at all, and only the latter leaves the ranking.
+ */
 TEST_F(ModeReportWritersTest, APluginWithSomeFailedRunsStaysRanked) {
     input_.outcomes = {outcome("partial.so", {run(-1.0, 0), run(50.0, 5)})};
 
@@ -187,6 +209,9 @@ TEST_F(ModeReportWritersTest, APluginWithSomeFailedRunsStaysRanked) {
     EXPECT_EQ(report["errors"].size(), 0u);
 }
 
+/**
+ * @brief Plugins whose runs match one for one are grouped, largest group first.
+ */
 TEST_F(ModeReportWritersTest, ComparativeGroupsPluginsThatMatchRunByRun) {
     input_.outcomes = {outcome("a.so", {run(10.0, 5), run(20.0, 7)}),
                        outcome("b.so", {run(10.0, 5), run(20.0, 7)}),
@@ -201,6 +226,9 @@ TEST_F(ModeReportWritersTest, ComparativeGroupsPluginsThatMatchRunByRun) {
     EXPECT_EQ(summary[1]["same_results"][0].as<std::string>(), "c.so");
 }
 
+/**
+ * @brief Two plugins with equal totals but different per-run results are kept apart.
+ */
 TEST_F(ModeReportWritersTest, AnEqualTotalIsNotEnoughToShareAGroup) {
     /**
      * @note The assignment's own counterexample: its sample shows `total_score: 495` in two
@@ -219,6 +247,9 @@ TEST_F(ModeReportWritersTest, AnEqualTotalIsNotEnoughToShareAGroup) {
     EXPECT_DOUBLE_EQ(summary[1]["total_score"].as<double>(), 30.0);
 }
 
+/**
+ * @brief Identical scores with different step counts are still different behaviour.
+ */
 TEST_F(ModeReportWritersTest, DifferingStepsAloneSeparateTwoPlugins) {
     /**
      * @note Exactly the shipped fixtures: identical maps and identical scores, 1 step versus 2. If
@@ -232,6 +263,9 @@ TEST_F(ModeReportWritersTest, DifferingStepsAloneSeparateTwoPlugins) {
     EXPECT_EQ(summary.size(), 2u);
 }
 
+/**
+ * @brief Two writes of the same data produce byte-identical grouping.
+ */
 TEST_F(ModeReportWritersTest, GroupingIsReproducibleAcrossWrites) {
     /**
      * @note Comparative mode exists to answer whether two plugins agree. A report that ordered
@@ -252,6 +286,11 @@ TEST_F(ModeReportWritersTest, GroupingIsReproducibleAcrossWrites) {
     EXPECT_EQ(first, second);
 }
 
+/**
+ * @brief The comparative report names the composition, the varied folder and the fixed plugin.
+ * @note The fixed plugin appears as a filename rather than a path, so a report is comparable between
+ *       machines that keep their plugins in different places.
+ */
 TEST_F(ModeReportWritersTest, ComparativeCarriesItsIdentifyingPaths) {
     input_.outcomes = {outcome("a.so", {run(10.0, 5)})};
 
@@ -263,6 +302,11 @@ TEST_F(ModeReportWritersTest, ComparativeCarriesItsIdentifyingPaths) {
     EXPECT_FALSE(report["generated_at_utc"].as<std::string>().empty());
 }
 
+/**
+ * @brief The competitive report names the same three things under its own mode's keys.
+ * @note The keys differ per mode - `mission_control` and `algorithms_folder` here - because which
+ *       side is fixed and which is varied is exactly what distinguishes the two modes.
+ */
 TEST_F(ModeReportWritersTest, CompetitiveCarriesItsIdentifyingPaths) {
     input_.outcomes = {outcome("a.so", {run(10.0, 5)})};
 
@@ -272,6 +316,9 @@ TEST_F(ModeReportWritersTest, CompetitiveCarriesItsIdentifyingPaths) {
     EXPECT_EQ(report["algorithms_folder"].as<std::string>(), "plugins/varied");
 }
 
+/**
+ * @brief A mode that ran nothing still produces a complete, parseable document.
+ */
 TEST_F(ModeReportWritersTest, AnEmptyModeStillProducesAReadableDocument) {
     const YAML::Node report = writeCompetitive();
 
@@ -280,6 +327,9 @@ TEST_F(ModeReportWritersTest, AnEmptyModeStillProducesAReadableDocument) {
     EXPECT_EQ(report["errors"].size(), 0u);
 }
 
+/**
+ * @brief Empty lists emit as sequences, never as YAML null.
+ */
 TEST_F(ModeReportWritersTest, EmptyListsAreSequencesNotNull) {
     /**
      * @note A default-constructed node that never receives an element emits as `~`, which parses

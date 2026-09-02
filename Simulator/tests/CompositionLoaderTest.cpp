@@ -75,6 +75,11 @@ namespace fs = std::filesystem;
     return length.force_numerical_value_in(common::cm);
 }
 
+/**
+ * @brief The composition shipped in `inputs/` parses with no recovery at all.
+ * @note The zero-error assertion is the point: these files are the ones every real run uses, so any
+ *       silent defaulting here would go unnoticed while quietly changing what the simulator runs.
+ */
 TEST(CompositionLoader, LoadsTheShippedDataset) {
     simulator::ErrorLogger logger;
     const simulator::CompositionLoadResult result =
@@ -96,6 +101,11 @@ TEST(CompositionLoader, LoadsTheShippedDataset) {
     EXPECT_EQ(logger.errorCount(), 0u) << "the shipped dataset must parse without any recovery";
 }
 
+/**
+ * @brief Every `map_filename` resolves to a real file, rebased on the composition's directory.
+ * @note Relative paths resolve against the *composition*, not against the simulation file that named
+ *       them - so a config referenced from a subdirectory still finds `inputs/map`.
+ */
 TEST(CompositionLoader, ResolvesEveryMapFileToSomethingThatExists) {
     simulator::ErrorLogger logger;
     const simulator::CompositionLoadResult result =
@@ -111,6 +121,11 @@ TEST(CompositionLoader, ResolvesEveryMapFileToSomethingThatExists) {
     }
 }
 
+/**
+ * @brief Simulation fields arrive with the right values and the right units.
+ * @note The house scenario is chosen because it is the one with a non-zero `map_offset`, which is
+ *       the field most easily dropped without any other test noticing.
+ */
 TEST(CompositionLoader, ParsesSimulationValues) {
     simulator::ErrorLogger logger;
     const simulator::CompositionLoadResult result =
@@ -129,6 +144,11 @@ TEST(CompositionLoader, ParsesSimulationValues) {
     EXPECT_DOUBLE_EQ(house.initial_angle.force_numerical_value_in(common::deg), 0.0);
 }
 
+/**
+ * @brief `dimensions_cm` is a diameter and is halved into the radius the code carries.
+ * @note The YAML and the struct disagree by a factor of two on purpose. Passing the diameter through
+ *       unchanged would silently double the drone everywhere it is used.
+ */
 TEST(CompositionLoader, HalvesTheDroneDiameterIntoARadius) {
     simulator::ErrorLogger logger;
     const simulator::CompositionLoadResult result =
@@ -142,6 +162,11 @@ TEST(CompositionLoader, HalvesTheDroneDiameterIntoARadius) {
     EXPECT_DOUBLE_EQ(asCm(small.max_elevate), 20.0);
 }
 
+/**
+ * @brief Lidar and mission fields parse, including the default for an absent optional key.
+ * @note `output_mapping_resolution_factor` defaulting to 1 rather than 0 matters: a zero factor
+ *       would classify every run as a resolution request that could not be honoured.
+ */
 TEST(CompositionLoader, ParsesLidarAndMissionValues) {
     simulator::ErrorLogger logger;
     const simulator::CompositionLoadResult result =
@@ -163,6 +188,11 @@ TEST(CompositionLoader, ParsesLidarAndMissionValues) {
     EXPECT_DOUBLE_EQ(asCm(mission.mission_bounds.max_height), 60.0);
 }
 
+/**
+ * @brief The optional paths sink is filled index-parallel to the parsed composition.
+ * @note Paths are stored *as written* rather than as resolved, because they are what the report
+ *       prints - an absolute machine-specific path would make two reports incomparable.
+ */
 TEST(CompositionLoader, RecordsSourcePathsInParallel) {
     simulator::ErrorLogger logger;
     simulator::CompositionPaths paths;
@@ -243,6 +273,11 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief A missing key falls back to a default, keeps the entry, and is logged as an input error.
+ * @note The recovery contract in one test: malformed input degrades rather than aborting, but never
+ *       silently - dropping the entry would change how many runs the composition describes.
+ */
 TEST_F(CompositionLoaderRecoveryTest, MissingKeyDefaultsAndIsLogged) {
     const fs::path composition = writeComposition();
     write("simulation/s.yaml", "simulation_config:\n  map_filename: \"map/m.npy\"\n");
@@ -260,6 +295,9 @@ TEST_F(CompositionLoaderRecoveryTest, MissingKeyDefaultsAndIsLogged) {
     EXPECT_DOUBLE_EQ(asCm(result.composition.drone_configs.front().radius), 4.0);
 }
 
+/**
+ * @brief A value of the wrong type defaults and is logged, exactly as a missing one is.
+ */
 TEST_F(CompositionLoaderRecoveryTest, BadValueDefaultsAndIsLogged) {
     const fs::path composition = writeComposition();
     write("simulation/s.yaml", "simulation_config:\n  map_resolution_cm: \"not a number\"\n");
@@ -277,6 +315,11 @@ TEST_F(CompositionLoaderRecoveryTest, BadValueDefaultsAndIsLogged) {
     EXPECT_GT(logger.inputErrorCount(), 0u);
 }
 
+/**
+ * @brief A referenced config file that does not exist yields a default-filled entry, still counted.
+ * @note Keeping the entry is what preserves index alignment with `CompositionPaths` and with the run
+ *       expansion; removing it would shift every later drone in the report.
+ */
 TEST_F(CompositionLoaderRecoveryTest, UnreadableReferenceDegradesToDefaults) {
     const fs::path composition = writeComposition();
     write("simulation/s.yaml", "simulation_config:\n  map_filename: \"map/m.npy\"\n");
@@ -294,6 +337,11 @@ TEST_F(CompositionLoaderRecoveryTest, UnreadableReferenceDegradesToDefaults) {
     EXPECT_GT(logger.inputErrorCount(), 0u);
 }
 
+/**
+ * @brief A simulation with no missions is skipped from the composition *and* from the paths.
+ * @note The alignment discipline itself. Appending to one but not the other would silently mislabel
+ *       every run after this point in the report, with no error anywhere to explain it.
+ */
 TEST_F(CompositionLoaderRecoveryTest, SimulationWithoutMissionsIsSkippedAndPathsStayAligned) {
     const fs::path composition = writeComposition("        []\n");
     write("simulation/s.yaml", "simulation_config:\n  map_filename: \"map/m.npy\"\n");
@@ -313,6 +361,11 @@ TEST_F(CompositionLoaderRecoveryTest, SimulationWithoutMissionsIsSkippedAndPaths
     EXPECT_GT(logger.inputErrorCount(), 0u);
 }
 
+/**
+ * @brief Unparseable YAML returns a failed result rather than propagating an exception.
+ * @note This is what `main` turns into `COMPOSITION_LOAD_FAILED` before returning normally, so the
+ *       yaml-cpp exception must be contained here rather than escaping to the top level.
+ */
 TEST_F(CompositionLoaderRecoveryTest, MalformedDocumentFailsWithoutThrowing) {
     const fs::path composition = write("broken.yaml", "simulation_compositions: [unclosed\n");
 
@@ -324,6 +377,9 @@ TEST_F(CompositionLoaderRecoveryTest, MalformedDocumentFailsWithoutThrowing) {
     EXPECT_FALSE(result.error.empty());
 }
 
+/**
+ * @brief A composition path that does not exist fails the same way a malformed one does.
+ */
 TEST_F(CompositionLoaderRecoveryTest, MissingFileFailsWithoutThrowing) {
     simulator::ErrorLogger logger;
     simulator::CompositionLoadResult result;

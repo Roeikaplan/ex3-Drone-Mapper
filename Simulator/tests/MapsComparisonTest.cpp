@@ -52,6 +52,9 @@ using common::z_extent;
     return simulator::Map3DImpl{simulator::Map3DImpl::makeEmptyArray(config), config};
 }
 
+/**
+ * @brief Two maps with the same occupied cells score 100.
+ */
 TEST(MapsComparison, IdenticalMapsScorePerfect) {
     const common::types::MapConfig config = cubeConfig(4.0, 1.0);
     simulator::Map3DImpl origin = emptyMap(config);
@@ -65,6 +68,9 @@ TEST(MapsComparison, IdenticalMapsScorePerfect) {
     EXPECT_DOUBLE_EQ(simulator::MapsComparison::compare(origin, target), 100.0);
 }
 
+/**
+ * @brief A target that found nothing scores 0 against an origin that holds something.
+ */
 TEST(MapsComparison, AnEmptyTargetScoresZero) {
     const common::types::MapConfig config = cubeConfig(4.0, 1.0);
     simulator::Map3DImpl origin = emptyMap(config);
@@ -75,6 +81,11 @@ TEST(MapsComparison, AnEmptyTargetScoresZero) {
     EXPECT_DOUBLE_EQ(simulator::MapsComparison::compare(origin, target), 0.0);
 }
 
+/**
+ * @brief Two maps with no occupied cells anywhere score 100, not 0.
+ * @note The degenerate numerator and denominator are both zero, and the answer has to be agreement
+ *       rather than a divide-by-zero or a punitive 0 - the target reproduced the origin exactly.
+ */
 TEST(MapsComparison, TwoEmptyMapsAreTriviallyIdentical) {
     const common::types::MapConfig config = cubeConfig(4.0, 1.0);
     const simulator::Map3DImpl origin = emptyMap(config);
@@ -84,6 +95,9 @@ TEST(MapsComparison, TwoEmptyMapsAreTriviallyIdentical) {
         << "no occupied voxels anywhere means the maps agree, not that the target failed";
 }
 
+/**
+ * @brief A partial overlap scores intersection over union, not a percentage of either map alone.
+ */
 TEST(MapsComparison, PartialOverlapGivesTheIntersectionOverUnion) {
     const common::types::MapConfig config = cubeConfig(4.0, 1.0);
     simulator::Map3DImpl origin = emptyMap(config);
@@ -104,6 +118,9 @@ TEST(MapsComparison, PartialOverlapGivesTheIntersectionOverUnion) {
     EXPECT_DOUBLE_EQ(simulator::MapsComparison::compare(origin, target), 50.0);
 }
 
+/**
+ * @brief Agreement on empty space earns nothing; only occupied voxels count.
+ */
 TEST(MapsComparison, EmptyAgreementDoesNotInflateTheScore) {
     /**
      * @note The two maps agree on 63 of 64 cells, disagreeing only on the single occupied one. A
@@ -126,6 +143,9 @@ TEST(MapsComparison, EmptyAgreementDoesNotInflateTheScore) {
     EXPECT_DOUBLE_EQ(simulator::MapsComparison::compare(origin, target), 0.0);
 }
 
+/**
+ * @brief Maps at different resolutions are still comparable, because sampling is by world position.
+ */
 TEST(MapsComparison, ATargetAtADifferentResolutionIsStillScored) {
     /**
      * @note This is the property that positional sampling buys. The target's grid is half the
@@ -144,6 +164,11 @@ TEST(MapsComparison, ATargetAtADifferentResolutionIsStillScored) {
     EXPECT_DOUBLE_EQ(simulator::MapsComparison::compare(origin, target), 100.0);
 }
 
+/**
+ * @brief A degenerate map geometry scores 0 instead of dividing by a zero cell size.
+ * @note Scoring runs after a mission has already completed, so it must not be able to crash the run
+ *       it is reporting on - a bad geometry becomes a bad score, not an exception.
+ */
 TEST(MapsComparison, NonPositiveResolutionScoresZeroRatherThanDividing) {
     common::types::MapConfig broken = cubeConfig(4.0, 1.0);
     const common::types::MapConfig usable = cubeConfig(4.0, 1.0);

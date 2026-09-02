@@ -43,6 +43,9 @@ protected:
     void TearDown() override { simulator::Registrar::instance().clear(); }
 };
 
+/**
+ * @brief A fixture `.so` loads, runs its registration constructor, and yields a usable factory.
+ */
 TEST_F(PluginLifecycleTest, AFixturePluginLoadsAndSelfRegisters) {
     /**
      * @note The whole mechanism in one assertion: the `.so` carries an undefined symbol for its
@@ -65,6 +68,9 @@ TEST_F(PluginLifecycleTest, AFixturePluginLoadsAndSelfRegisters) {
     loader.releaseAll();
 }
 
+/**
+ * @brief After a load, the registrar is empty because the report has claimed everything.
+ */
 TEST_F(PluginLifecycleTest, TheLoaderClaimsWhatWasRegisteredSoNothingIsLeftBehind) {
     simulator::PluginLoader loader;
     simulator::PluginLoadReport report;
@@ -85,6 +91,9 @@ TEST_F(PluginLifecycleTest, TheLoaderClaimsWhatWasRegisteredSoNothingIsLeftBehin
     loader.releaseAll();
 }
 
+/**
+ * @brief The full load-claim-copy-destroy-clear-`dlclose` sequence completes without crashing.
+ */
 TEST_F(PluginLifecycleTest, TheTeardownOrderSurvivesAFullLoadClaimDestroySequence) {
     /**
      * @note The regression test for the phase-01 crash, in the order `main` performs it:
@@ -126,6 +135,11 @@ TEST_F(PluginLifecycleTest, TheTeardownOrderSurvivesAFullLoadClaimDestroySequenc
     SUCCEED() << "load, claim, copy, destroy, clear, dlclose completed without crashing";
 }
 
+/**
+ * @brief `releaseAll` is safe to call with nothing loaded, and safe to call twice.
+ * @note It sits on every exit path including the error ones, so idempotence is what lets `main` call
+ *       it unconditionally rather than tracking whether a load ever succeeded.
+ */
 TEST_F(PluginLifecycleTest, ReleasingWithoutLoadingAnythingIsHarmless) {
     simulator::PluginLoader loader;
     loader.releaseAll();
@@ -133,6 +147,9 @@ TEST_F(PluginLifecycleTest, ReleasingWithoutLoadingAnythingIsHarmless) {
     SUCCEED() << "releaseAll is idempotent, which is what makes it safe on every exit path";
 }
 
+/**
+ * @brief A library that opens cleanly but registers nothing is reported as a load failure.
+ */
 TEST_F(PluginLifecycleTest, ALibraryThatRegistersNothingIsAFailureNotASuccess) {
     /**
      * @note The outcome that looks like success from `dlopen`'s point of view: the library opens
@@ -153,6 +170,11 @@ TEST_F(PluginLifecycleTest, ALibraryThatRegistersNothingIsAFailureNotASuccess) {
     loader.releaseAll();
 }
 
+/**
+ * @brief A path that does not exist is reported as a failure and leaves the batch running.
+ * @note One unreadable file in a folder of many must not end the mode - the other plugins still have
+ *       runs to complete, and the report names this one under `errors:`.
+ */
 TEST_F(PluginLifecycleTest, AMissingFileIsReportedRatherThanFatal) {
     simulator::PluginLoader loader;
     simulator::PluginLoadReport report;

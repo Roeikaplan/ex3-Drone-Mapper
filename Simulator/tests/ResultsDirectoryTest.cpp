@@ -58,6 +58,11 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief Comparative mode creates its results directory under the varied plugin folder.
+ * @note Both halves are checked - the parent and the prefix - because the assignment fixes where the
+ *       directory goes as firmly as what it is called.
+ */
 TEST_F(ResultsDirectoryTest, ComparativeUsesItsOwnPrefix) {
     const simulator::ResultsDirectory result =
         simulator::createResultsDirectory(argsFor(simulator::RunMode::Comparative));
@@ -68,6 +73,9 @@ TEST_F(ResultsDirectoryTest, ComparativeUsesItsOwnPrefix) {
     EXPECT_TRUE(fs::is_directory(result.path));
 }
 
+/**
+ * @brief Competition mode uses the other prefix, which is not simply the first one renamed.
+ */
 TEST_F(ResultsDirectoryTest, CompetitionUsesItsOwnPrefix) {
     const simulator::ResultsDirectory result =
         simulator::createResultsDirectory(argsFor(simulator::RunMode::Competition));
@@ -78,6 +86,11 @@ TEST_F(ResultsDirectoryTest, CompetitionUsesItsOwnPrefix) {
     EXPECT_TRUE(fs::is_directory(result.path));
 }
 
+/**
+ * @brief The directory name carries a `YYYYMMDD_HHMMSS` stamp in a fixed shape.
+ * @note The stamp is what makes a fresh run land somewhere new, so its length and separator are
+ *       pinned rather than left to whatever the formatter happens to emit.
+ */
 TEST_F(ResultsDirectoryTest, NameCarriesATimestamp) {
     const simulator::ResultsDirectory result =
         simulator::createResultsDirectory(argsFor(simulator::RunMode::Comparative));
@@ -89,6 +102,9 @@ TEST_F(ResultsDirectoryTest, NameCarriesATimestamp) {
     EXPECT_EQ(stamp[8], '_');
 }
 
+/**
+ * @brief Three runs inside one second still get three distinct directories.
+ */
 TEST_F(ResultsDirectoryTest, BackToBackRunsNeverCollide) {
     /**
      * @note These three calls land in the same wall-clock second, which is exactly the case a bare
@@ -112,6 +128,11 @@ TEST_F(ResultsDirectoryTest, BackToBackRunsNeverCollide) {
     EXPECT_TRUE(fs::is_directory(third.path));
 }
 
+/**
+ * @brief An uncreatable directory is reported through the result, never by throwing.
+ * @note This runs before any mission does, so the failure is recoverable - `main` prints it and
+ *       returns normally. Throwing would turn a bad path into a crash with no report at all.
+ */
 TEST_F(ResultsDirectoryTest, MissingParentIsReportedNotThrown) {
     simulator::CommandLineArgs args = argsFor(simulator::RunMode::Comparative);
     args.varied_plugin_folder = dir_ / "does" / "not" / "exist";

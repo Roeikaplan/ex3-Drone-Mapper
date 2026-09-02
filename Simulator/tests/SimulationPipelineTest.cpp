@@ -94,6 +94,11 @@ private:
     return simulator::loadComposition(sourceRoot() / "inputs" / "sim_compose.yaml", logger, &paths);
 }
 
+/**
+ * @brief Every config in the shipped composition resolves to its source file's stem.
+ * @note The index resolves by *address*, which is what lets the run factory name a config it holds
+ *       only a reference to - and why the stems, not the full paths, end up in output filenames.
+ */
 TEST(ConfigIdentityIndex, ResolvesEachConfigToItsSourceStem) {
     simulator::ErrorLogger logger;
     simulator::CompositionPaths paths;
@@ -109,6 +114,11 @@ TEST(ConfigIdentityIndex, ResolvesEachConfigToItsSourceStem) {
     EXPECT_EQ(identity.nameOf(composition.composition.lidar_configs.front()), "lidar_long");
 }
 
+/**
+ * @brief A config the index never saw resolves to a conspicuous fallback rather than a wrong name.
+ * @note Because lookup is by address, a *copy* of an indexed config is a stranger too - which is
+ *       precisely why the report writer cannot use this index and labels runs positionally instead.
+ */
 TEST(ConfigIdentityIndex, AnUnindexedConfigFallsBackConspicuously) {
     simulator::ErrorLogger logger;
     simulator::CompositionPaths paths;
@@ -125,6 +135,11 @@ TEST(ConfigIdentityIndex, AnUnindexedConfigFallsBackConspicuously) {
     EXPECT_EQ(identity.nameOf(stranger), "unknown");
 }
 
+/**
+ * @brief With no paths recorded, configs still get distinct positional names.
+ * @note `loadComposition` may be called without a paths sink, and output map filenames must still
+ *       differ between runs - colliding names would have runs overwrite each other's maps.
+ */
 TEST(ConfigIdentityIndex, WithoutRecordedPathsNamesStayDistinguishable) {
     simulator::ErrorLogger logger;
     const simulator::CompositionLoadResult composition =
@@ -204,6 +219,11 @@ protected:
     fs::path dir_{};
 };
 
+/**
+ * @brief The output map filename names the plugin and all four configs of the run.
+ * @note One results directory holds every plugin's every run, so the filename is what keeps them
+ *       apart - and what the flat-report fallback later relies on to identify a run at all.
+ */
 TEST_F(SimulationPipelineTest, OutputMapFilenameNamesEveryDimensionOfTheRun) {
     const auto factory = makeFactory(common::types::MissionRunStatus::Completed, false);
     const auto& group = composition_.composition.simulation_mission_groups.front();
@@ -219,6 +239,9 @@ TEST_F(SimulationPipelineTest, OutputMapFilenameNamesEveryDimensionOfTheRun) {
               "FakePlugin__house_simulation__house_mission_lower__drone_small__lidar_long.npy");
 }
 
+/**
+ * @brief The hidden map is built with real boundaries, so scoring compares a genuine grid.
+ */
 TEST_F(SimulationPipelineTest, TheHiddenMapGetsRealBoundsSoScoringIsMeaningful) {
     /**
      * @note If the hidden map were built with a default `MapConfig`, scoring would walk an empty
@@ -239,6 +262,11 @@ TEST_F(SimulationPipelineTest, TheHiddenMapGetsRealBoundsSoScoringIsMeaningful) 
         << "a real ground-truth grid must disagree with a map holding one stray voxel";
 }
 
+/**
+ * @brief An errored mission takes the -1 sentinel and is not compared at all.
+ * @note A partial map from a failed run would still yield a plausible-looking number, so failure has
+ *       to be distinguishable from a poor score rather than folded into one.
+ */
 TEST_F(SimulationPipelineTest, AnErroredMissionScoresTheSentinel) {
     const auto factory = makeFactory(common::types::MissionRunStatus::Error, true);
     const auto& group = composition_.composition.simulation_mission_groups.front();
@@ -255,6 +283,11 @@ TEST_F(SimulationPipelineTest, AnErroredMissionScoresTheSentinel) {
     EXPECT_EQ(result.mission_results.front().status, common::types::MissionRunStatus::Error);
 }
 
+/**
+ * @brief A missing ground-truth map throws from `create` rather than producing a scoreable run.
+ * @note This is the throw the manager catches to log `RUN_FAILED`. Building an empty hidden map
+ *       instead would score every affected run against nothing and hand back a perfect result.
+ */
 TEST_F(SimulationPipelineTest, AMissingMapFileThrowsRatherThanScoringSilently) {
     simulator::types::SimulationConfigData broken = firstSimulation();
     broken.map_filename = dir_ / "absent.npy";
@@ -268,6 +301,9 @@ TEST_F(SimulationPipelineTest, AMissingMapFileThrowsRatherThanScoringSilently) {
                  std::runtime_error);
 }
 
+/**
+ * @brief The manager expands the full cartesian product and stamps the report's metadata.
+ */
 TEST_F(SimulationPipelineTest, TheManagerExpandsEveryCombination) {
     simulator::SimulationManager manager{makeFactory(common::types::MissionRunStatus::Completed,
                                                      false),
@@ -283,6 +319,9 @@ TEST_F(SimulationPipelineTest, TheManagerExpandsEveryCombination) {
     EXPECT_EQ(report.composition_file, composition_.composition.composition_file);
 }
 
+/**
+ * @brief A factory that throws for every cell still yields a complete report, one error per cell.
+ */
 TEST_F(SimulationPipelineTest, AFailingFactoryScoresTheCellAndKeepsGoing) {
     /**
      * @note A factory that always throws stands in for a bad map file, which fails identically for
@@ -310,6 +349,11 @@ TEST_F(SimulationPipelineTest, AFailingFactoryScoresTheCellAndKeepsGoing) {
     EXPECT_EQ(logger_.errorCount(), 24u) << "every failed cell is logged as it happens";
 }
 
+/**
+ * @brief A manager constructed with no factory is rejected immediately.
+ * @note Failing in the constructor rather than at first use keeps the null out of the run loop,
+ *       where it would surface once per cell as an unexplained crash inside a worker thread.
+ */
 TEST_F(SimulationPipelineTest, ANullFactoryIsRejected) {
     EXPECT_THROW(simulator::SimulationManager(nullptr, "FakePlugin", logger_),
                  std::invalid_argument);

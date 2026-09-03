@@ -21,7 +21,7 @@
 #include <map>
 #include <vector>
 
-namespace mission_control::testing {
+namespace mission_control_323998450_211633813::testing {
 
 using namespace common;
 
@@ -386,4 +386,4 @@ private:
     bool first_scan_was_null_ = false;
 };
 
-} // namespace mission_control::testing
+} // namespace mission_control_323998450_211633813::testing

@@ -721,7 +721,7 @@ registration path needs no synchronisation at all.
 `RTLD_NOW` is chosen over lazy binding so an unresolved symbol surfaces at load time — a broken plugin then
 lands in the report's `errors:` list instead of aborting the process mid-run. `RTLD_LOCAL` keeps each plugin's
 globals out of the global symbol namespace, which is what lets two teams' plugins with identical class names
-coexist, and is why the lowercase-namespace decision is safe.
+coexist even before the ID-suffixed namespaces are taken into account.
 
 ### 7.3 Task table construction and dispatch
 
@@ -1325,10 +1325,9 @@ against the composition's own storage, which is read-only during execution.
 ### 11.9 `RTLD_LOCAL` rather than `RTLD_GLOBAL`
 
 Two teams' plugins may define identically named symbols. `RTLD_LOCAL` keeps each plugin's globals out of the
-global namespace so they cannot collide or interpose on one another. This is also what makes the project's
-lowercase-namespace decision safe despite the PDF's ID-suffixed-namespace suggestion — the isolation the PDF was
-reaching for is achieved by the loader flag instead, with the ID suffix retained on filenames and on the
-registration alias.
+global namespace so they cannot collide or interpose on one another. The ID-suffixed namespaces the PDF requires (§2.2) give a
+second, source-level guarantee of the same thing; the loader flag is what makes isolation hold even for
+libraries that did *not* follow that convention, such as another team's.
 
 ### 11.10 Equality by the ordered `(score, steps)` vector
 

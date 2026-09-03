@@ -15,7 +15,7 @@
 #include <string>
 #include <utility>
 
-namespace mission_control {
+namespace mission_control_323998450_211633813 {
 namespace {
 
 /**
@@ -35,7 +35,7 @@ namespace {
                                          const types::MovementCommand& command) {
     switch (command.type) {
     case types::MovementCommandType::Advance:
-        return user_common::pointAlongBeam(
+        return user_common_323998450_211633813::pointAlongBeam(
             position, Orientation{heading.horizontal, 0.0 * altitude_angle[deg]}, command.distance);
     case types::MovementCommandType::Elevate:
         return Position3D{position.x, position.y,
@@ -312,4 +312,4 @@ types::DroneState DroneControlImpl::state() const {
     return types::DroneState{gps_.position(), gps_.heading(), step_index_};
 }
 
-} // namespace mission_control
+} // namespace mission_control_323998450_211633813

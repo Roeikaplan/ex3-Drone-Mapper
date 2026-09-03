@@ -18,10 +18,10 @@
 /**
  * @brief Global-scope alias required by the registration macro.
  * @note `REGISTER_MISSION_CONTROL(x)` token-pastes into `register_me_##x`, so a qualified name like
- *       `mission_control::MissionControlImpl` cannot be passed - it would paste into something that
+ *       `mission_control_323998450_211633813::MissionControlImpl` cannot be passed - it would paste into something that
  *       is not an identifier. The submitter ids ride along on the alias, which keeps the emitted
  *       symbol unique across the many teams' libraries a results folder may hold at once.
  */
-using MissionControlImpl_323998450_211633813 = mission_control::MissionControlImpl;
+using MissionControlImpl_323998450_211633813 = mission_control_323998450_211633813::MissionControlImpl;
 
 REGISTER_MISSION_CONTROL(MissionControlImpl_323998450_211633813);

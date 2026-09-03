@@ -16,12 +16,12 @@
 namespace {
 
 using namespace common;
-using mission_control::DroneControlImpl;
-using mission_control::testing::FakeGPS;
-using mission_control::testing::FakeLidar;
-using mission_control::testing::FakeMap;
-using mission_control::testing::FakeMovement;
-using mission_control::testing::ScriptedAlgorithm;
+using mission_control_323998450_211633813::DroneControlImpl;
+using mission_control_323998450_211633813::testing::FakeGPS;
+using mission_control_323998450_211633813::testing::FakeLidar;
+using mission_control_323998450_211633813::testing::FakeMap;
+using mission_control_323998450_211633813::testing::FakeMovement;
+using mission_control_323998450_211633813::testing::ScriptedAlgorithm;
 
 /**
  * @brief Build a world position from plain centimetre values.

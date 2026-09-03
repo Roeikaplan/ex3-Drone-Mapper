@@ -22,7 +22,7 @@ namespace simulator {
  *       rounding could pick either neighbour.
  */
 double MapsComparison::compare(const common::IMap3D& origin, const common::IMap3D& target) {
-    const user_common::VoxelGrid grid = user_common::VoxelGrid::from(origin.getMapConfig());
+    const user_common_323998450_211633813::VoxelGrid grid = user_common_323998450_211633813::VoxelGrid::from(origin.getMapConfig());
 
     /**
      * @note Without a positive resolution there is no grid to walk. Reporting the floor score beats
@@ -38,7 +38,7 @@ double MapsComparison::compare(const common::IMap3D& origin, const common::IMap3
     for (std::int64_t i = 0; i < grid.sizeX(); ++i) {
         for (std::int64_t j = 0; j < grid.sizeY(); ++j) {
             for (std::int64_t k = 0; k < grid.sizeZ(); ++k) {
-                const common::Position3D centre = grid.centreOf(user_common::VoxelIndex{i, j, k});
+                const common::Position3D centre = grid.centreOf(user_common_323998450_211633813::VoxelIndex{i, j, k});
 
                 const bool origin_occupied =
                     origin.atVoxel(centre) == common::types::VoxelOccupancy::Occupied;

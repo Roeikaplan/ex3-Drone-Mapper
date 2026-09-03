@@ -26,8 +26,9 @@ update it in the same change — do not let the two drift.
 A C++20 skeleton for "Assignment 3 - Drone Mapper": a drone flies through a 3D voxel map, scanning with
 a simulated lidar, and a pluggable mapping algorithm builds an occupancy map as the mission runs. A
 separate simulator drives many (simulation config x mission config) combinations against ground-truth maps
-and scores the results. Required project namespaces are lowercase: `common`, `algorithm`, `mission_control`,
-`simulator`.
+and scores the results. Project namespaces carry the submitter IDs where the PDF requires it:
+`algorithm_323998450_211633813`, `mission_control_323998450_211633813`,
+`user_common_323998450_211633813`; `common` and `simulator` stay bare.
 
 **Status: this is a skeleton, not a working build.** `common/` (the interfaces/types library) is fully
 defined and header-only. `Algorithm/`, `MissionControl/`, and `Simulator/` have their public headers defined
@@ -100,15 +101,16 @@ Key interfaces and where they plug in:
   a `SimulationManagerReport`; `ISimulationRunFactory::create()` builds one `ISimulationRun` per
   (simulation, mission, drone, lidar) combination.
 
-### Naming: lowercase namespaces, ID-suffixed artifacts
+### Naming: ID-suffixed namespaces and artifacts
 
 Two separate conventions that are easy to conflate:
 
-- **Namespaces are lowercase**, per `README.md`: `common`, `algorithm`, `mission_control`, `simulator`
-  (and `user_common` if a `UserCommon/` folder is added). The assignment PDF asks instead for
-  ID-suffixed namespaces (`Algorithm_<id1>_<id2>`); the skeleton README wins — see `project_context.md`
-  §2.2 for the reasoning. `common` was never open to choice anyway, since the frozen registration
-  macros hard-code `::common::`.
+- **Namespaces carry the IDs for the three projects the PDF names** (§1.2, §1.3, §1.4b):
+  `algorithm_323998450_211633813`, `mission_control_323998450_211633813`,
+  `user_common_323998450_211633813`. Two are deliberately bare: `common` was never open to choice,
+  since the frozen registration macros hard-code `::common::`, and `simulator` is unconstrained —
+  the PDF fixes only the executable's name. The skeleton README asks for all-lowercase namespaces
+  instead; the PDF wins, see `project_context.md` §2.2.
 - **Build artifacts keep the PDF's ID suffixes**, because comparative/competitive mode enumerates a
   folder holding many teams' libraries at once: `simulator_323998450_211633813`,
   `MissionControl_323998450_211633813.so`, `Algorithm_323998450_211633813.so`.
@@ -155,6 +157,6 @@ but not exposed to `common`. `common/` has no `src/` — it's interface/type def
 same drone/lidar/mission/mapping problem (`include/drone_mapper/I*.h`, `MissionControlImpl`,
 `DroneControlImpl`, `MappingAlgorithmImpl`, `ScanResultToVoxels`, etc.), useful as a reference for mission
 loop / drone-stepping / scan-to-voxel logic. Two things differ from this assignment and shouldn't be
-copied verbatim: it uses a single `drone_mapper` namespace/static-lib instead of the required lowercase
-`common`/`algorithm`/`mission_control`/`simulator` split, and it has no dynamic-loading/plugin-registration
+copied verbatim: it uses a single `drone_mapper` namespace/static-lib instead of the required
+per-project namespace split, and it has no dynamic-loading/plugin-registration
 model (everything is linked directly rather than `dlopen`ed via the `REGISTER_*` macros).

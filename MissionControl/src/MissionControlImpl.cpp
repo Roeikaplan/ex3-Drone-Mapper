@@ -8,7 +8,7 @@
 #include <ostream>
 #include <utility>
 
-namespace mission_control {
+namespace mission_control_323998450_211633813 {
 namespace {
 
 /**
@@ -168,4 +168,4 @@ void MissionControlImpl::traceStep(std::size_t step, const types::DroneState& st
             << std::endl;
 }
 
-} // namespace mission_control
+} // namespace mission_control_323998450_211633813

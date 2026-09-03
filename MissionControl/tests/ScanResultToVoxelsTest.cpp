@@ -17,8 +17,8 @@
 namespace {
 
 using namespace common;
-using mission_control::ScanResultToVoxels;
-using mission_control::testing::FakeMap;
+using mission_control_323998450_211633813::ScanResultToVoxels;
+using mission_control_323998450_211633813::testing::FakeMap;
 
 /**
  * @brief Build a world position from plain centimetre values.

@@ -19,14 +19,15 @@
 namespace {
 
 using namespace common;
-using algorithm::MappingAlgorithmImpl;
-using user_common::VoxelGrid;
-using user_common::VoxelIndex;
+using algorithm_323998450_211633813::MappingAlgorithmImpl;
+using user_common_323998450_211633813::VoxelGrid;
+using user_common_323998450_211633813::VoxelIndex;
 
 /**
  * @brief Ordering so voxel indices can key a map.
  * @note An explicit comparator rather than an `operator<`. A free operator declared here would not
- *       be found by `std::less`, whose lookup reaches `user_common` by argument-dependent lookup and
+ *       be found by `std::less`, whose lookup reaches the `user_common_…` namespace by
+ *       argument-dependent lookup and
  *       never sees this file's anonymous namespace - and putting an ordering into the shared header
  *       to satisfy one test would be the tail wagging the dog. The planner itself needs no ordering
  *       at all; it indexes flat arrays.

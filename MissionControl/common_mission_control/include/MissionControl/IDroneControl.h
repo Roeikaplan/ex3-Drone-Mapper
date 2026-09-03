@@ -2,7 +2,7 @@
 
 #include <Common/Types.h>
 
-namespace mission_control {
+namespace mission_control_323998450_211633813 {
 
 using namespace common;
 
@@ -13,4 +13,4 @@ public:
     [[nodiscard]] virtual types::DroneState state() const = 0;
 };
 
-} // namespace mission_control
+} // namespace mission_control_323998450_211633813

@@ -92,6 +92,42 @@ drone_fixture_plugin(StubMissionControl_B tests/fixtures/StubMissionControl.cpp 
 target_compile_definitions(StubMissionControl_A PRIVATE STUB_MC_STEPS=1)
 target_compile_definitions(StubMissionControl_B PRIVATE STUB_MC_STEPS=2)
 
+# Two copies of each *real* plugin, dropped in beside the stubs so each fixtures folder is a
+# ready-made multi-plugin target for the mode that varies that side: -comparative enumerates the
+# mission controls, -competition the algorithms. The pair is byte-identical, so comparative must
+# group them together and competition must rank them level, while the stubs separate.
+#
+# Copies rather than extra targets because a plugin's identity in the report is its filename -
+# nothing inside the library distinguishes them, which is precisely the property being demonstrated.
+# `copy_if_different` reruns on every build, so a copy can never drift from the plugin it came from.
+add_custom_target(fixture_mission_control_copies ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures/mission_controls"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:MissionControl_323998450_211633813>"
+            "${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures/mission_controls/MissionControl_Alpha.so"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:MissionControl_323998450_211633813>"
+            "${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures/mission_controls/MissionControl_Beta.so"
+    COMMENT "Copying the real mission control into the fixtures folder as two named plugins"
+    VERBATIM
+)
+add_dependencies(fixture_mission_control_copies MissionControl_323998450_211633813)
+
+add_custom_target(fixture_algorithm_copies ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures/algorithms"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Algorithm_323998450_211633813>"
+            "${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures/algorithms/Algorithm_Alpha.so"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Algorithm_323998450_211633813>"
+            "${DRONE_PLUGIN_OUTPUT_ROOT}/fixtures/algorithms/Algorithm_Beta.so"
+    COMMENT "Copying the real algorithm into the fixtures folder as two named plugins"
+    VERBATIM
+)
+add_dependencies(fixture_algorithm_copies Algorithm_323998450_211633813)
+
 # ---------------------------------------------------------------------------------------------
 # Unit tests.
 #
@@ -175,7 +211,8 @@ set_target_properties(simulator_unit_test PROPERTIES
 )
 
 # The fixtures must exist before the tests that load them run.
-add_dependencies(simulator_unit_test StubAlgorithm_A StubMissionControl_A StubMissionControl_B SilentPlugin)
+add_dependencies(simulator_unit_test StubAlgorithm_A StubMissionControl_A StubMissionControl_B
+                 SilentPlugin fixture_mission_control_copies fixture_algorithm_copies)
 
 drone_warnings(simulator_unit_test)
 gtest_discover_tests(simulator_unit_test)

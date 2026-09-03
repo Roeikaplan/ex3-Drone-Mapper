@@ -13,10 +13,10 @@
 
 #include <limits>
 
-namespace mission_control {
+namespace mission_control_323998450_211633813 {
 
 /**
- * @note The subsystem's own `IDroneControl.h` opens `namespace mission_control` with
+ * @note The subsystem's own `IDroneControl.h` opens `namespace mission_control_323998450_211633813` with
  *       `using namespace common;`, so every file that includes it refers to `types::` and the unit
  *       aliases unqualified. This file does not include that header but follows the same convention
  *       rather than half-qualifying and reading differently from its neighbours.
@@ -109,7 +109,7 @@ void markBeamSegment(IMutableMap3D& output_map, const Position3D& scan_origin,
                      types::VoxelOccupancy value) {
     for (PhysicalLength distance = start_distance; distance <= end_distance; distance += step) {
         const Position3D point =
-            user_common::pointAlongBeam(scan_origin, beam_orientation, distance);
+            user_common_323998450_211633813::pointAlongBeam(scan_origin, beam_orientation, distance);
         if (!output_map.isInBounds(point)) {
             break;
         }
@@ -146,7 +146,7 @@ void ScanResultToVoxels::applyToMap(IMutableMap3D& output_map, const Position3D&
     }
 
     for (const types::LidarHit& hit : scan) {
-        const Orientation beam = user_common::absoluteBeam(drone_heading, hit.angle);
+        const Orientation beam = user_common_323998450_211633813::absoluteBeam(drone_heading, hit.angle);
 
         if (isZeroDistance(hit.distance)) {
             /**
@@ -174,10 +174,10 @@ void ScanResultToVoxels::applyToMap(IMutableMap3D& output_map, const Position3D&
              */
             markBeamSegment(output_map, scan_origin, beam, 0.0 * cm, hit.distance, step,
                             types::VoxelOccupancy::Empty);
-            setIfStronger(output_map, user_common::pointAlongBeam(scan_origin, beam, hit.distance),
+            setIfStronger(output_map, user_common_323998450_211633813::pointAlongBeam(scan_origin, beam, hit.distance),
                           types::VoxelOccupancy::Occupied);
         }
     }
 }
 
-} // namespace mission_control
+} // namespace mission_control_323998450_211633813

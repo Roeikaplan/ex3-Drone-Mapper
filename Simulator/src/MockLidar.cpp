@@ -101,7 +101,7 @@ common::types::LidarScanResult MockLidar::scan(common::Orientation scan_orientat
 
     const common::Orientation sensor_heading = gps_.heading();
     const common::Orientation centre_beam_absolute =
-        user_common::absoluteBeam(sensor_heading, scan_orientation);
+        user_common_323998450_211633813::absoluteBeam(sensor_heading, scan_orientation);
 
     results.push_back(common::types::LidarHit{traceBeam(centre_beam_absolute), scan_orientation});
 
@@ -120,7 +120,7 @@ common::types::LidarScanResult MockLidar::scan(common::Orientation scan_orientat
                 scan_orientation.altitude + altitudeDelta(altitude_offset, config_.z_min),
             };
             const common::Orientation absolute_beam =
-                user_common::absoluteBeam(sensor_heading, relative_beam);
+                user_common_323998450_211633813::absoluteBeam(sensor_heading, relative_beam);
 
             results.push_back(common::types::LidarHit{traceBeam(absolute_beam), relative_beam});
         }
@@ -148,7 +148,7 @@ common::PhysicalLength MockLidar::traceBeam(const common::Orientation& beam_orie
 
     for (common::PhysicalLength distance = 0.0 * cm; distance <= config_.z_max; distance += step) {
         const common::Position3D sample =
-            user_common::pointAlongBeam(origin, beam_orientation, distance);
+            user_common_323998450_211633813::pointAlongBeam(origin, beam_orientation, distance);
 
         if (map_.atVoxel(sample) == common::types::VoxelOccupancy::Occupied) {
             /**

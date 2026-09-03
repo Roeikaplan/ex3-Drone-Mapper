@@ -207,7 +207,7 @@ std::unique_ptr<NpyArray> Map3DImpl::makeEmptyArray(const common::types::MapConf
      *       used to be separate copies of the same `ceil` and a divergence would have been silent -
      *       slightly wrong scores at the far edge rather than an obvious failure.
      */
-    const user_common::VoxelGrid grid = user_common::VoxelGrid::from(config);
+    const user_common_323998450_211633813::VoxelGrid grid = user_common_323998450_211633813::VoxelGrid::from(config);
     const NpyArray::shape_t shape{
         static_cast<std::size_t>(grid.sizeX()),
         static_cast<std::size_t>(grid.sizeY()),

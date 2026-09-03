@@ -14,7 +14,7 @@
 #include <deque>
 #include <vector>
 
-namespace algorithm {
+namespace algorithm_323998450_211633813 {
 
 /**
  * @brief Reusable working memory for one frontier search.
@@ -64,7 +64,7 @@ struct FrontierSearchScratch {
      *       Entries before the head are spent and simply left in place - nothing is ever erased from
      *       the middle, so no element is moved and the order the search sees is exactly a deque's.
      */
-    std::vector<user_common::VoxelIndex> queue{};
+    std::vector<user_common_323998450_211633813::VoxelIndex> queue{};
 
     /**
      * @brief Index of the next cell to expand.
@@ -130,7 +130,7 @@ struct FrontierSearchScratch {
      * @note After the first search of a run this never allocates: `beginSearch` clears the vector
      *       without releasing its capacity, and a cell can be enqueued at most once per search.
      */
-    void enqueue(const user_common::VoxelIndex& cell) { queue.push_back(cell); }
+    void enqueue(const user_common_323998450_211633813::VoxelIndex& cell) { queue.push_back(cell); }
 
     /**
      * @brief Take the cell at the front of the queue.
@@ -140,7 +140,7 @@ struct FrontierSearchScratch {
      *       the same iteration, and a `push_back` that grows the vector would leave any reference
      *       into it dangling. Three integers are far cheaper than that hazard.
      */
-    [[nodiscard]] user_common::VoxelIndex dequeue() { return queue[queue_head++]; }
+    [[nodiscard]] user_common_323998450_211633813::VoxelIndex dequeue() { return queue[queue_head++]; }
 };
 
 /**
@@ -216,4 +216,4 @@ private:
     bool finished_ = false;
 };
 
-} // namespace algorithm
+} // namespace algorithm_323998450_211633813

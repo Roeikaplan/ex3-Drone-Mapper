@@ -14,7 +14,7 @@
 #include <fstream>
 #include <optional>
 
-namespace mission_control {
+namespace mission_control_323998450_211633813 {
 
 /**
  * @brief Drives a mission to completion and persists the map it produced.
@@ -83,4 +83,4 @@ private:
     DroneControlImpl drone_control_;
 };
 
-} // namespace mission_control
+} // namespace mission_control_323998450_211633813

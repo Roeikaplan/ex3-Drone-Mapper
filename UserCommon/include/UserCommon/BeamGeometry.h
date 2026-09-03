@@ -21,7 +21,7 @@
 
 #include <cmath>
 
-namespace user_common {
+namespace user_common_323998450_211633813 {
 
 /**
  * @brief Collapse a direction component that is zero in all but floating-point representation.
@@ -96,4 +96,4 @@ namespace user_common {
     };
 }
 
-} // namespace user_common
+} // namespace user_common_323998450_211633813

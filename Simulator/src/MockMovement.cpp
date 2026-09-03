@@ -79,7 +79,7 @@ common::types::MovementResult MockMovement::advance(common::PhysicalLength dista
      *       orientation is what keeps this identical to the prediction the mission control's drone
      *       controller makes before allowing the move.
      */
-    gps_.setPosition(user_common::pointAlongBeam(
+    gps_.setPosition(user_common_323998450_211633813::pointAlongBeam(
         gps_.position(), common::Orientation{heading.horizontal, 0.0 * common::altitude_angle[deg]},
         distance));
     return common::types::MovementResult{true, {}};

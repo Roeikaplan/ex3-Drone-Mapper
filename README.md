@@ -70,6 +70,43 @@ map per run, one `score_report` YAML per plugin, one mode-level report comparing
 `main` returns on every path and never calls `exit()`. A bad command line, an unreadable composition,
 or a plugin that fails to load are all reported rather than fatal.
 
+### Running several plugins at once
+
+Both modes take a *folder*, so "several plugins" just means several `.so` files in it — there is no
+extra flag. The build populates `plugins/fixtures/mission_controls/` with four ready to use: two
+byte-identical copies of the real mission control, plus the two stubs.
+
+```bash
+./build/default/Simulator/simulator_323998450_211633813 -comparative \
+  simulation=inputs/sim_compose.yaml \
+  mission_control_folder=build/default/plugins/fixtures/mission_controls \
+  algorithm=build/default/plugins/algorithms/Algorithm_323998450_211633813.so \
+  num_threads=4
+```
+
+`MissionControl_Alpha.so` and `MissionControl_Beta.so` are the same library under two names, so they
+must land in one `same_results` group while the two stubs separate on step count — an end-to-end check
+that grouping works. A plugin's identity is its **filename**; nothing inside the library distinguishes
+the copies, which is the property being demonstrated.
+
+Competition mode is the mirror image — `plugins/fixtures/algorithms/` holds three: two copies of the
+real algorithm plus the stub.
+
+```bash
+./build/default/Simulator/simulator_323998450_211633813 -competition \
+  simulation=inputs/sim_compose.yaml \
+  mission_control=build/default/plugins/mission_controls/MissionControl_323998450_211633813.so \
+  algorithms_folder=build/default/plugins/fixtures/algorithms \
+  num_threads=4
+```
+
+`Algorithm_Alpha.so` and `Algorithm_Beta.so` are again the same library twice, so they must rank level
+on both score and steps, with the stub last.
+
+Note the run count multiplies: with the shipped composition each plugin costs 6 simulation/mission
+pairs × 2 drones × 2 lidars = 24 runs, so the comparative example above is 96 runs and the competition
+one 72. Point `simulation=` at a smaller composition to iterate quickly.
+
 ---
 
 ## Architecture
@@ -182,11 +219,17 @@ so carrying a digest would need a parallel side-channel through the whole run pi
 
 ## Design decisions
 
-**Lowercase namespaces, ID-suffixed artifacts.** Namespaces are `common`, `algorithm`,
-`mission_control`, `simulator`, `user_common`, per the skeleton's `README`. Build artifacts keep the
-PDF's ID suffixes, because comparative and competitive modes enumerate a folder holding many teams'
-libraries at once. `common` was never open to choice anyway — the frozen registration macros hard-code
-`::common::`.
+**ID-suffixed namespaces and artifacts.** The three projects the assignment names carry the submitter
+IDs in their namespaces — `algorithm_323998450_211633813`, `mission_control_323998450_211633813`,
+`user_common_323998450_211633813` — so two teams' plugins can coexist in one process. Two are
+deliberately bare: `common` was never open to choice, since the frozen registration macros hard-code
+`::common::`, and `simulator` is unconstrained because the assignment fixes only the executable's name
+and the Simulator is never loaded as a plugin. Build artifacts keep the same ID suffixes, because both
+run modes enumerate a folder that may hold many teams' libraries at once.
+
+The isolation this protects against is also enforced at load time: `dlopen` uses `RTLD_LOCAL`, so even
+a plugin that ignored the convention cannot collide with ours. The two `StubMissionControl` fixtures are
+built from one source and load together as a standing check of exactly that.
 
 **`UserCommon/` holds only real cross-project duplication.** Two headers earned their place:
 `BeamGeometry.h` (the beam/heading geometry shared by `MockLidar`, `ScanResultToVoxels`,
@@ -232,7 +275,10 @@ ctest --test-dir build/default --output-on-failure     # all suites
 `PluginLifecycleTest` is the only suite that `dlopen`s real libraries; it uses purpose-built fixture
 plugins, including one that loads cleanly and registers nothing. The fixtures live under
 `build/default/plugins/fixtures/`, with the deliberately-broken one in its own folder so it can never
-pollute a folder an end-to-end run enumerates.
+pollute a folder an end-to-end run enumerates. Both `fixtures/mission_controls/` and
+`fixtures/algorithms/` additionally receive two copies of the corresponding real plugin at build time,
+so each folder doubles as the multi-plugin target described under
+[Running several plugins at once](#running-several-plugins-at-once).
 
 ---
 

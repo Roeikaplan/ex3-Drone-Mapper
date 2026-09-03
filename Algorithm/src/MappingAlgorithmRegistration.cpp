@@ -17,10 +17,10 @@
 /**
  * @brief Global-scope alias required by the registration macro.
  * @note `REGISTER_MAPPING_ALGORITHM(x)` token-pastes into `register_me_##x`, so a qualified name
- *       like `algorithm::MappingAlgorithmImpl` cannot be passed - it would paste into something that
+ *       like `algorithm_323998450_211633813::MappingAlgorithmImpl` cannot be passed - it would paste into something that
  *       is not an identifier. The submitter ids ride along, keeping the emitted symbol unique across
  *       the many teams' libraries a competition folder holds at once.
  */
-using MappingAlgorithmImpl_323998450_211633813 = algorithm::MappingAlgorithmImpl;
+using MappingAlgorithmImpl_323998450_211633813 = algorithm_323998450_211633813::MappingAlgorithmImpl;
 
 REGISTER_MAPPING_ALGORITHM(MappingAlgorithmImpl_323998450_211633813);

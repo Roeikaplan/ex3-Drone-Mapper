@@ -16,7 +16,7 @@
 #include <cstddef>
 #include <optional>
 
-namespace mission_control {
+namespace mission_control_323998450_211633813 {
 
 /**
  * @brief Turns one algorithm command into validated motion and a recorded scan.
@@ -104,4 +104,4 @@ private:
     std::size_t step_index_ = 0;
 };
 
-} // namespace mission_control
+} // namespace mission_control_323998450_211633813

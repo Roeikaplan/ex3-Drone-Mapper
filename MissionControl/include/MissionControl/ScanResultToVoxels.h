@@ -8,7 +8,7 @@
 #include <Common/IMutableMap3D.h>
 #include <Common/Types.h>
 
-namespace mission_control {
+namespace mission_control_323998450_211633813 {
 
 /**
  * @brief Writes what a scan observed into the map being built.
@@ -47,4 +47,4 @@ public:
                            const common::types::LidarConfigData& lidar_config);
 };
 
-} // namespace mission_control
+} // namespace mission_control_323998450_211633813

@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace user_common {
+namespace user_common_323998450_211633813 {
 
 /**
  * @brief A voxel's integer coordinate within a grid.
@@ -229,4 +229,4 @@ private:
     std::int64_t nz_ = 0;
 };
 
-} // namespace user_common
+} // namespace user_common_323998450_211633813

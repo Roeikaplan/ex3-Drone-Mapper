@@ -16,13 +16,13 @@
 #include <cstddef>
 #include <optional>
 
-namespace algorithm {
+namespace algorithm_323998450_211633813 {
 namespace {
 
 using common::cm;
 using common::deg;
-using user_common::VoxelGrid;
-using user_common::VoxelIndex;
+using user_common_323998450_211633813::VoxelGrid;
+using user_common_323998450_211633813::VoxelIndex;
 
 /**
  * @brief Tolerance below which an angle or distance is treated as already satisfied.
@@ -506,4 +506,4 @@ common::types::MappingStepCommand MappingAlgorithmImpl::nextStep(
     return command;
 }
 
-} // namespace algorithm
+} // namespace algorithm_323998450_211633813

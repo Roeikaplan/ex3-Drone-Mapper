@@ -8,7 +8,7 @@
 
 #include <Simulator/CommandLineArgs.h>
 
-#include <Simulator/PluginLoader.h>
+#include <Simulator/PluginDiscovery.h>
 
 #include <charconv>
 #include <fstream>
@@ -347,7 +347,7 @@ void validateCommandLinePaths(const CommandLineArgs& args, std::vector<std::stri
                 /**
                  * @note The assignment says "zero `.so` files of the expected kind". The kind cannot
                  *       be known without loading a library, so only presence is checked here;
-                 *       `PluginLoader` reports a per-file kind mismatch later.
+                 *       the registry reports a per-file kind mismatch later.
                  */
                 errors.push_back(key +
                                  ": contains no .so files: " + args.varied_plugin_folder.string());

@@ -7,9 +7,7 @@
 
 #include <Simulator/ConfigIdentityIndex.h>
 #include <Simulator/ISimulationRunFactory.h>
-
-#include <Common/MappingAlgorithmFactory.h>
-#include <Common/MissionControlFactory.h>
+#include <Simulator/PluginRegistry.h>
 
 #include <filesystem>
 #include <memory>
@@ -30,24 +28,30 @@ namespace simulator {
  * @note This is the only place that knows concrete types. Everything else works through interfaces,
  *       and two of the "concrete types" here are opaque - produced by `std::function`s handed over
  *       by libraries loaded at runtime.
- * @note **It holds those factories by value**, so their targets live in plugin code. This object
- *       must therefore be destroyed before any plugin library is unloaded.
+ * @note **It holds no factory of its own - it borrows one from each slot per call.** That is what
+ *       makes the lazy lifecycle possible: an owned copy of a plugin's `std::function` would keep
+ *       that library's code reachable, and therefore un-unloadable, for as long as this object
+ *       lived. Asking the registry each time also means the first run of a plugin is what maps it.
+ * @note The borrowed factory is valid only while the calling run holds its reserved use - which it
+ *       does for the whole of `create()` and beyond, until its `PluginUseGuard` is destroyed.
  */
 class SimulationRunFactoryImpl final : public ISimulationRunFactory {
 public:
     /**
-     * @brief Bind a factory to one plugin pair.
-     * @param mission_control_factory Produces the mission control for every run this builds.
-     * @param algorithm_factory Produces the mapping algorithm for every run this builds.
+     * @brief Bind a factory to one plugin pair, named by slot rather than by factory.
+     * @param registry Owns the two libraries and performs their loads; must outlive this object.
+     * @param mission_control_slot The mission-control plugin every run this builds will use.
+     * @param algorithm_slot The algorithm plugin every run this builds will use.
      * @param plugin_label Name used to distinguish this pair's output files from another pair's.
      * @param identity Source-file names for the configs, used to name output maps; must outlive
      *        this object.
      * @param verbose Whether missions should be asked to write verbose output.
+     * @note Constructing this loads nothing. The pair is named here and mapped later, by whichever
+     *       run gets to it first.
      */
-    SimulationRunFactoryImpl(common::MissionControlFactory mission_control_factory,
-                             common::MappingAlgorithmFactory algorithm_factory,
-                             std::string plugin_label, const ConfigIdentityIndex& identity,
-                             bool verbose);
+    SimulationRunFactoryImpl(PluginRegistry& registry, PluginSlot& mission_control_slot,
+                             PluginSlot& algorithm_slot, std::string plugin_label,
+                             const ConfigIdentityIndex& identity, bool verbose);
 
     /**
      * @brief Build one run.
@@ -58,8 +62,10 @@ public:
      * @param output_path Directory the run's output map is written into.
      * @return A run ready to execute.
      * @throws std::runtime_error when the ground-truth map cannot be read.
+     * @throws PluginUnavailable when either plugin library could not be loaded.
      * @note Throwing is deliberate and contained: `SimulationManager` catches, logs, and scores the
-     *       affected combination -1, which is what the assignment prescribes for a bad map file.
+     *       affected combination -1, which is what the assignment prescribes for a bad map file -
+     *       and, now that loading happens here, for an unloadable plugin too.
      * @note A fresh instance of each plugin is created per call and never cached. That is required,
      *       and it is also what keeps runs independent of one another.
      */
@@ -89,8 +95,9 @@ private:
         const common::types::DroneConfigData& drone_config,
         const common::types::LidarConfigData& lidar_config) const;
 
-    common::MissionControlFactory mission_control_factory_;
-    common::MappingAlgorithmFactory algorithm_factory_;
+    PluginRegistry& registry_;
+    PluginSlot& mission_control_slot_;
+    PluginSlot& algorithm_slot_;
     std::string plugin_label_;
     const ConfigIdentityIndex& identity_;
     bool verbose_;

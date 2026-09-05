@@ -8,11 +8,13 @@
 
 #include <Simulator/CompositionLoader.h>
 #include <Simulator/ConfigIdentityIndex.h>
+#include <Simulator/PluginRegistry.h>
 #include <Simulator/SimulationManager.h>
 #include <Simulator/SimulationRunFactoryImpl.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -81,6 +83,36 @@ private:
     common::IMutableMap3D& output_map_;
     common::types::MissionRunStatus status_;
     bool occupy_;
+};
+
+/**
+ * @brief A mission control that takes one scan from the starting pose and hands it back.
+ * @note Exists to observe what the drone can actually *see* the moment a run begins, which is the
+ *       only externally visible symptom of a start pose that landed inside solid ground.
+ */
+class ScanningMissionControl final : public common::IMissionControl {
+public:
+    /**
+     * @brief Construct from the host-supplied dependencies.
+     * @param dependencies What the run factory wired up.
+     * @param scan Sink for the opening scan; must outlive this object.
+     */
+    ScanningMissionControl(common::MissionControlDependencies dependencies,
+                           common::types::LidarScanResult& scan)
+        : lidar_(dependencies.lidar), scan_(scan) {}
+
+    /**
+     * @brief Run the mission.
+     * @return Completion after the single scan.
+     */
+    [[nodiscard]] common::types::MissionRunResult runMission() override {
+        scan_ = lidar_.scan(common::Orientation{});
+        return common::types::MissionRunResult{common::types::MissionRunStatus::Completed, 1, {}};
+    }
+
+private:
+    common::ILidar& lidar_;
+    common::types::LidarScanResult& scan_;
 };
 
 /**
@@ -192,16 +224,25 @@ protected:
      */
     [[nodiscard]] std::unique_ptr<simulator::SimulationRunFactoryImpl> makeFactory(
         common::types::MissionRunStatus status, bool occupy) {
-        return std::make_unique<simulator::SimulationRunFactoryImpl>(
+        /**
+         * @note The fakes are adopted into registry slots rather than handed over as bare
+         *       `std::function`s, so these tests drive exactly the acquire path a real plugin takes.
+         *       An adopted slot is born loaded and has no library behind it, which is the only
+         *       difference.
+         */
+        simulator::PluginSlot& mission_control = registry_.adoptMissionControl(
             [status, occupy](common::MissionControlDependencies dependencies)
                 -> std::unique_ptr<common::IMissionControl> {
                 return std::make_unique<FakeMissionControl>(std::move(dependencies), status, occupy);
-            },
+            });
+        simulator::PluginSlot& algorithm = registry_.adoptAlgorithm(
             [](common::MappingAlgorithmDependencies dependencies)
                 -> std::unique_ptr<common::IMappingAlgorithm> {
                 return std::make_unique<FakeAlgorithm>(std::move(dependencies));
-            },
-            "FakePlugin", *identity_, false);
+            });
+
+        return std::make_unique<simulator::SimulationRunFactoryImpl>(
+            registry_, mission_control, algorithm, "FakePlugin", *identity_, false);
     }
 
     /**
@@ -213,6 +254,8 @@ protected:
     }
 
     simulator::ErrorLogger logger_{};
+    simulator::PluginLifecycleLog lifecycle_{};
+    simulator::PluginRegistry registry_{logger_, lifecycle_};
     simulator::CompositionPaths paths_{};
     simulator::CompositionLoadResult composition_{};
     std::unique_ptr<simulator::ConfigIdentityIndex> identity_{};
@@ -357,6 +400,51 @@ TEST_F(SimulationPipelineTest, AFailingFactoryScoresTheCellAndKeepsGoing) {
 TEST_F(SimulationPipelineTest, ANullFactoryIsRejected) {
     EXPECT_THROW(simulator::SimulationManager(nullptr, "FakePlugin", logger_),
                  std::invalid_argument);
+}
+
+/**
+ * @brief A scenario with a map offset starts the drone in the free space the configs describe.
+ * @note `house_simulation.yaml` is the only shipped scenario with a non-zero `map_axes_offset`, and
+ *       its own comment - `height_cm: 10 # -> 160` - says the offset moves the *configs'* frame into
+ *       the map. Applying it to the ground-truth array as well cancels that translation exactly, and
+ *       the house map's bottom fifteen layers are solid ground: the drone spawned inside them, every
+ *       beam hit nearer than `z_min`, nothing was ever proven `Empty`, and both house runs ended
+ *       after their opening survey with a score of 0. An all-blocked opening scan is that failure's
+ *       signature, and it is visible from outside the simulator without reaching for the hidden map.
+ */
+TEST_F(SimulationPipelineTest, AnOffsetScenarioStartsTheDroneInFreeSpace) {
+    const auto& group = composition_.composition.simulation_mission_groups.front();
+    ASSERT_DOUBLE_EQ(std::get<0>(group).map_offset.z.force_numerical_value_in(cm), 150.0)
+        << "this test is only meaningful on a scenario whose map is offset";
+
+    common::types::LidarScanResult opening_scan;
+    simulator::PluginSlot& mission_control = registry_.adoptMissionControl(
+        [&opening_scan](common::MissionControlDependencies dependencies)
+            -> std::unique_ptr<common::IMissionControl> {
+            return std::make_unique<ScanningMissionControl>(std::move(dependencies), opening_scan);
+        });
+    simulator::PluginSlot& algorithm = registry_.adoptAlgorithm(
+        [](common::MappingAlgorithmDependencies dependencies)
+            -> std::unique_ptr<common::IMappingAlgorithm> {
+            return std::make_unique<FakeAlgorithm>(std::move(dependencies));
+        });
+    simulator::SimulationRunFactoryImpl factory{
+        registry_, mission_control, algorithm, "FakePlugin", *identity_, false};
+
+    const std::unique_ptr<simulator::ISimulationRun> run =
+        factory.create(std::get<0>(group), std::get<1>(group).front(),
+                       composition_.composition.drone_configs.front(),
+                       composition_.composition.lidar_configs.front(), dir_);
+    ASSERT_NE(run, nullptr);
+    (void)run->run();
+
+    ASSERT_FALSE(opening_scan.empty());
+    const bool every_beam_blocked = std::all_of(
+        opening_scan.begin(), opening_scan.end(), [](const common::types::LidarHit& hit) {
+            return hit.distance == 0.0 * cm;
+        });
+    EXPECT_FALSE(every_beam_blocked)
+        << "every beam reported the nearer-than-z_min sentinel, so the drone is inside solid ground";
 }
 
 } // namespace

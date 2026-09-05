@@ -57,7 +57,9 @@ This is the highest-value phase in the project. Nothing here touches drones, map
 - The `.cpp` defining `MappingAlgorithmRegistration::MappingAlgorithmRegistration` and its MissionControl
   twin. These live **only** in the Simulator and push into the Registrar.
 - `PluginLibrary` — RAII over one `dlopen` handle, `dlclose` in the destructor and nowhere else.
-- `PluginLoader` — enumerate a folder, load each `.so` serially, claim the newly-appended factory.
+- `PluginDiscovery` — enumerate a folder, canonicalise, sort, de-duplicate. Loads nothing.
+- `PluginRegistry` — one slot per file; load a `.so` on its first use under the load mutex, claim the
+  newly-appended factory, and unload it once its reserved uses are all given back.
 - A do-nothing `MappingAlgorithmImpl` that returns `Hover` + `Finished`, and a do-nothing
   `MissionControlImpl` that returns `Completed`. Register both.
 - A `main` that loads the folder, prints how many factories arrived, calls each one once, destroys the

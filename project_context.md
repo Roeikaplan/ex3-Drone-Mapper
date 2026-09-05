@@ -313,10 +313,11 @@ resulting invariant — **the worker count is never exactly 1** — is asserted 
 
 Design guidance straight from the PDF:
 
-- **Loading all required `.so` files up front is explicitly endorsed.** Doing so on the main thread
-  before any worker starts removes all locking from the registration path. (An on-demand
-  load-once/unload-when-idle scheme, *without ever reloading*, is worth a **bonus** — but it is
-  strictly harder and is not the default plan.)
+- **Loading all required `.so` files up front is explicitly endorsed** — and that is what we did until
+  the bonus was taken. **We now load on demand instead** (see [§8.6](#86-bonuses-available)): a library
+  is mapped by the first run that needs it and unmapped by the last run to finish with it, never
+  reloaded. Registration still needs serialising, but by one mutex around the load rather than by
+  confining it to the main thread; every use after a plugin's first takes a lock-free fast path.
 - **Avoid locking where possible; lock where necessary.** Necessary: appending to a shared error log,
   and any `std::cout` diagnostics. Unnecessary if designed right: results storage.
 - **The result table is knowable in advance** — build the full dense
@@ -365,7 +366,10 @@ none of them touching `common/` or `common_simulator/`):
 |---|---|
 | `CommandLineArgs` | order-independent parsing, multi-error collection, usage text, file/folder validation |
 | `PluginLibrary` | RAII around one `dlopen` handle; `dlclose` **only** in its destructor |
-| `PluginLoader` | enumerates a folder or takes a single path; loads all `.so` up front on the main thread |
+| `PluginDiscovery` | enumerates a folder or takes a single path; canonicalises, sorts, de-duplicates — **loads nothing** |
+| `PluginRegistry` / `PluginSlot` | one slot per file; loads a `.so` on first use, unloads it after its last run, never reloads |
+| `PluginUse` / `PluginUseGuard` | a run's borrowed use of its two plugins, given back by a destructor |
+| `PluginLifecycleLog` | timestamped audit trail of every load and unload |
 | `Registrar` (singleton) | receives factories from the frozen registration constructors |
 | `CompositionLoader` | Ex2's YAML loader, ported to `simulator::types` |
 | `SimulationTaskTable` | dense pre-built `(plugin-pair × sim × mission × drone × lidar)` cells |
@@ -421,8 +425,14 @@ objects live in the plugin's code. Required order:
 3. **Clear the `Registrar`'s stored factories.**
 4. Only then let `PluginLibrary` destructors run `dlclose`.
 
-Declaring the `PluginLoader` *before* the registrar-clearing step in the same scope will get this
+Declaring the `PluginRegistry` *before* the registrar-clearing step in the same scope will get this
 wrong; sequence it explicitly.
+
+**Since the lazy lifecycle landed (§8.6), the same ladder is climbed per library, mid-run.** A
+`PluginUseGuard` declared *before* the run it guards is destroyed *after* it, so steps 2 and 3 are
+already done for that plugin when the guard gives back the run's last use and the slot unmaps the
+library. `main`'s copy of the sequence still exists, and still matters — it is what catches a library
+no run ever needed.
 
 ### 5.3 Per-run object graph (mostly unchanged from Ex2)
 
@@ -684,6 +694,33 @@ to make the mapping algorithm keep clearance while planning, leaving this as a p
 The second is more natural — clearance is a planning concern — but it is weaker in competitive mode,
 where our MissionControl runs against other teams' algorithms.
 
+### 8.8 Scoring walks the whole ground-truth grid, not the mission window — OPEN
+
+`MapsComparison::compare` iterates every voxel of the *hidden* map and counts occupied-voxel IoU over
+all of it. Where the mission bounds cover less than the map, everything outside them is unmappable by
+construction — the drone is never allowed to fly there — yet it still lands in the union and drags the
+score down.
+
+Measured on the house scenario after the `map_axes_offset` fix (phase 09c): `scenario_house.npy` holds
+15,531 occupied voxels, of which 2,481 fall inside `house_mission_full`'s window and 1,123 inside
+`house_mission_lower`'s. The IoU ceiling for those two runs is therefore **15.97** and **7.23**, no
+matter how perfectly the map is built. `house_mission_full` already scores 14.09 — 88% of everything
+it is permitted to reach — and finishes at 4,380 of its 10,000 steps, so its remaining gap is the
+metric, not the algorithm.
+
+Two readings, and the PDF does not settle it:
+
+- **As implemented** — the map is scored whole, and a mission that only surveys part of the world is
+  supposed to score badly. Simple, and identical for every team.
+- **Clipped to the mission bounds** — score only where flying was permitted, so the number measures
+  the algorithm rather than the composition. Comparable across scenarios, and it makes the two house
+  missions rankable against the rest instead of stuck under a low ceiling.
+
+Consequences either way: this is Simulator-side, so in *competitive* mode it applies equally to every
+team's algorithm and cannot advantage ours; but it decides whether the house scenarios can
+meaningfully separate algorithms at all. Ask on the forum before changing it — a scoring change is
+exactly the kind of thing a grader may run against their own simulator.
+
 ### 8.4 External libraries vs. the submission rules
 
 The PDF forbids submitting external libraries and permits only the standard library plus
@@ -701,8 +738,14 @@ plan per-subproject test targets; confirm the grading rules on the forum.
 ### 8.6 Bonuses available
 
 - **Class competition** for the best algorithm.
-- **Load-once / unload-when-idle plugin management** (never reloading the same `.so`) — explicitly
-  offered in the threading section.
+- ~~**Load-once / unload-when-idle plugin management**~~ — **TAKEN, and `bonus.txt` is written.**
+  `PluginRegistry` maps a `.so` on its first use and unmaps it when its last run finishes; the slot's
+  state machine (`NotLoaded → Loaded → Unloaded`, or `NotLoaded → Failed`) has no edge back, so a
+  reload is unexpressible rather than merely avoided. The counting works because the task table is
+  complete before dispatch, so the number of runs that will ever need a file is reserved up front and
+  a count of zero *proves* no future run can need it. Verified by `PluginRegistryTest`, by the
+  `plugin lifecycle:` summary line, and by `plugin_lifecycle.log` in each results directory.
+  Full reasoning in `docs/HLD.md` §11.4; the reversal it records is deliberate.
 - Any bonus request needs a `bonus.txt` describing the addition, how to verify it, and the relevant
   test filter.
 
@@ -740,10 +783,13 @@ Walked line by line in **phase 09a**; each tick carries the evidence it rests on
       for a later pass. `ErrorLogger.ConcurrentWritersProduceWholeLines` proves lines stay intact
       under eight concurrent writers.)*
 - [x] **`dlclose` every handle**, and only after all plugin-derived objects *and* the registrar's
-      factories are gone.
+      factories are gone. **Now also true per library, mid-run** — the `PluginUseGuard` in
+      `SimulationManager::runCell` is declared before the run it guards, so the run and both plugin
+      instances are destroyed before the use is returned, and `PluginRegistry::unloadLocked` destroys
+      the slot's factory before dropping the handle.
       *(phase 09a — the four steps are now written out explicitly in `main.cpp` rather than left to
       scope and declaration order. `~PluginLibrary` is the only `dlclose` site;
-      `PluginLoader::releaseAll()` merely clears the vector that triggers it.
+      `PluginRegistry::releaseAll()` merely sweeps whatever no run ever loaded.
       `PluginLifecycleTest.TheTeardownOrderSurvivesAFullLoadClaimDestroySequence` pins the ordering,
       including a deliberately-taken factory copy — the case that segfaulted in the phase-01 spike.)*
 - [x] **No cached plugin instances** — recreate from the factory per run; never reload a `.so`.
@@ -839,6 +885,6 @@ As Ex3 files land, these become the reference for new code in each layer:
 | Layer | Exemplar |
 |---|---|
 | Simulator header | `Simulator/include/Simulator/Registrar.h` |
-| Simulator source | `Simulator/src/PluginLoader.cpp` |
+| Simulator source | `Simulator/src/PluginRegistry.cpp` |
 | Plugin implementation | `MissionControl/src/MissionControlImpl.cpp` |
 | File-local helpers | `Simulator/src/SimulationRunFactoryImpl.cpp` |

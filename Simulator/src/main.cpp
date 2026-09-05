@@ -7,6 +7,10 @@
  * @note **This file owns the teardown ordering.** Everything holding a plugin-derived object or a
  *       plugin `std::function` has to be destroyed before the libraries are unloaded, and the
  *       registrar outlives `main`, so no scoping trick can arrange that on its own.
+ * @note Under the lazy plugin lifecycle most libraries have already unloaded themselves long before
+ *       this file's teardown runs - each one goes the moment its last run finishes, on whichever
+ *       thread that was. What remains here is the sweep for libraries no run ever needed, and it is
+ *       still written out step by step, because it is also the ordering every other unload obeys.
  * @note Running the composition against every plugin, and aggregating their reports, belongs to
  *       `SimulationOrchestrator`. What stays here is what only an entry point can do: decide the
  *       arguments are usable, choose where output goes, load the libraries, and unload them last.
@@ -16,7 +20,8 @@
 #include <Simulator/CompositionLoader.h>
 #include <Simulator/ConfigIdentityIndex.h>
 #include <Simulator/ErrorLogger.h>
-#include <Simulator/PluginLoader.h>
+#include <Simulator/PluginLifecycleLog.h>
+#include <Simulator/PluginRegistry.h>
 #include <Simulator/Registrar.h>
 #include <Simulator/ResultsDirectory.h>
 #include <Simulator/SimulationOrchestrator.h>
@@ -81,6 +86,27 @@ void reportComposition(const simulator::types::SimulationCompositionData& compos
               << " lidars=" << composition.lidar_configs.size() << "\n";
 }
 
+/**
+ * @brief Print what the plugin lifecycle actually did, and record the same in the audit log.
+ * @param registry The registry every load went through.
+ * @param lifecycle The audit log to close out.
+ * @note This is the evidence for the lazy-loading claim, so it names the three properties directly
+ *       rather than leaving them to be inferred: how many libraries were mapped at once at the
+ *       worst moment, that no file was ever opened twice, and that none is still mapped.
+ * @note Printed after every worker has joined and after the final sweep, so the counters cannot be
+ *       caught mid-change.
+ */
+void reportPluginLifecycle(const simulator::PluginRegistry& registry,
+                           simulator::PluginLifecycleLog& lifecycle) {
+    const simulator::PluginLibraryStats stats = simulator::pluginLibraryStats();
+    lifecycle.recordSummary(registry.discoveredCount(), registry.loadedCount());
+
+    std::cout << "plugin lifecycle: discovered=" << registry.discoveredCount()
+              << " loaded=" << registry.loadedCount() << " dlopen=" << stats.opens
+              << " dlclose=" << stats.closes << " peak_mapped=" << stats.peak_open
+              << " mapped_at_end=" << stats.currently_open << "\n";
+}
+
 } // namespace
 
 /**
@@ -128,22 +154,52 @@ int main(int argc, char** argv) {
      */
     const simulator::ConfigIdentityIndex identity{composition.composition, composition_paths};
 
-    simulator::PluginLoader loader;
-    {
-        simulator::PluginLoadReport plugins;
+    /**
+     * @note Declared before the registry, and therefore destroyed after it: the registry records an
+     *       event on every load and unload, including those performed by its own final sweep.
+     */
+    simulator::PluginLifecycleLog lifecycle{results.path / "plugin_lifecycle.log"};
 
+    /**
+     * @note The registry stays in `main`, outside the scope below, for the same reason the loader it
+     *       replaces did: it owns the `dlopen` handles, so it must outlive everything that borrows a
+     *       factory from them.
+     */
+    simulator::PluginRegistry registry{logger, lifecycle};
+    {
         const bool comparative = args.mode == simulator::RunMode::Comparative;
         const std::filesystem::path& algorithms_source =
             comparative ? args.fixed_plugin_file : args.varied_plugin_folder;
         const std::filesystem::path& mission_controls_source =
             comparative ? args.varied_plugin_folder : args.fixed_plugin_file;
 
-        loader.load(algorithms_source, simulator::PluginLoader::Kind::Algorithm, plugins);
-        loader.load(mission_controls_source, simulator::PluginLoader::Kind::MissionControl, plugins);
+        /**
+         * @note Discovery only lists files. Not one `.so` is mapped here, which is the whole point:
+         *       a library is loaded by the first run that needs it and unloaded by the last one to
+         *       finish with it, so at no moment is a folder's worth of plugins resident at once.
+         */
+        simulator::PluginRegistry::Discovery algorithms =
+            registry.discover(algorithms_source, simulator::PluginKind::Algorithm);
+        simulator::PluginRegistry::Discovery mission_controls =
+            registry.discover(mission_controls_source, simulator::PluginKind::MissionControl);
 
+        simulator::PluginSet plugins;
+        plugins.algorithms = std::move(algorithms.slots);
+        plugins.mission_controls = std::move(mission_controls.slots);
+        plugins.failures = std::move(algorithms.failures);
+        plugins.failures.insert(plugins.failures.end(), mission_controls.failures.begin(),
+                                mission_controls.failures.end());
+
+        /**
+         * @note These are the failures discovery itself can see - an unreadable path. A `.so` that
+         *       exists but will not load is reported later, by the run that first tries to use it.
+         */
         for (const simulator::PluginFailure& failure : plugins.failures) {
-            logger.log("PLUGIN_LOAD_FAILED", failure.file.string() + ": " + failure.reason);
+            logger.log("PLUGIN_DISCOVERY_FAILED", failure.file.string() + ": " + failure.reason);
         }
+
+        std::cout << "plugins discovered: " << plugins.algorithms.size() << " algorithm(s), "
+                  << plugins.mission_controls.size() << " mission control(s)\n";
 
         /**
          * @note No branch on `num_threads` here. The executor owns the whole thread rule, including
@@ -154,8 +210,8 @@ int main(int argc, char** argv) {
          */
         simulator::ThreadPoolExecutor executor{args.num_threads};
         simulator::SimulationOrchestrator orchestrator{
-            args, composition.composition, composition_paths, identity, results.path, logger,
-            executor};
+            args,          composition.composition, composition_paths, identity,
+            results.path,  logger,                  executor,          registry};
 
         /**
          * @note TEARDOWN STEP 1 - join the workers, and STEP 2 - destroy every run.
@@ -163,21 +219,22 @@ int main(int argc, char** argv) {
          *       `ThreadPoolExecutor::forEach` joins its pool before returning, and each
          *       `SimulationRunImpl` is a local of `SimulationManager::runCell` destroyed at the end of
          *       its own cell. So when `execute` returns, no thread is inside plugin code and no plugin
-         *       *instance* is alive - only the factories that made them.
+         *       *instance* is alive.
+         * @note STEP 3 also happens inside, per library rather than once at the end: the guard in
+         *       each cell gives back that run's use, and the run that returns a library's last use
+         *       destroys its factory and unmaps it there and then.
          */
         orchestrator.execute(plugins);
 
         /**
-         * @note TEARDOWN STEP 3 happens at the closing brace below: destroying the orchestrator
-         *       releases the managers, and with them the run factories holding copies of each
-         *       plugin's `std::function`. Those callables have their targets compiled into the
-         *       plugin's code segment, so they are every bit as dangerous to outlive a `dlclose` as an
-         *       instance would be. The scope exists for this and nothing else.
+         * @note The scope still exists, and still matters. The managers hold slot *references*, and
+         *       the registry's final sweep below must not run while anything that could still ask it
+         *       for a factory is alive.
          */
     }
 
     /**
-     * @note TEARDOWN STEP 4a - drop anything a library registered that the loader never claimed.
+     * @note TEARDOWN STEP 4a - drop anything a library registered that the registry never claimed.
      *       These are `std::function`s too, and the registrar is a singleton that outlives `main`, so
      *       no scope can reach them; they have to be cleared by hand, while the libraries are still
      *       mapped.
@@ -185,14 +242,17 @@ int main(int argc, char** argv) {
     simulator::Registrar::instance().clear();
 
     /**
-     * @note TEARDOWN STEP 4b - and only now. Every plugin instance, every factory copy, and every
-     *       claimed factory is gone, so unmapping the code they pointed into is finally safe. This
-     *       clears the loader's vector; `~PluginLibrary` is the one place that calls `dlclose`.
+     * @note TEARDOWN STEP 4b - and only now. Normally this finds nothing: every library that ran
+     *       anything has already been unloaded by its last run. What it catches is the library no run
+     *       ever needed - the composition was empty, or the plugin set was incomplete - which would
+     *       otherwise stay mapped until process exit.
      * @note Getting this order wrong does not fail here. It crashes during static destruction, after
      *       `main` has already returned 0, with a stack that names nothing in this project - which is
      *       exactly why the sequence is written out rather than left to destructor order.
      */
-    loader.releaseAll();
+    registry.releaseAll();
+
+    reportPluginLifecycle(registry, lifecycle);
 
     const std::size_t errors = logger.errorCount();
     if (errors > 0) {

@@ -6,6 +6,7 @@
 #pragma once
 
 #include <Simulator/ISimulationRunFactory.h>
+#include <Simulator/PluginUse.h>
 #include <Simulator/SimulationTypes.h>
 
 #include <cstddef>
@@ -21,11 +22,15 @@ namespace simulator {
  * @note Holds a factory pointer rather than a plugin index because that is all execution needs -
  *       `factory->create(...)->run()`. Non-owning: the orchestrator owns the managers that own the
  *       factories, and they outlive the table.
+ * @note It also carries the plugin *use* the run must give back when it finishes. That is what
+ *       drives unloading: the cell that returns the last outstanding use of a library is the one
+ *       that unmaps it, so the cells themselves have to know which two libraries they borrowed.
  * @note Config pointers refer into the composition, which must not be copied or resized after
  *       enumeration. The same constraint `ConfigIdentityIndex` already carries.
  */
 struct RunCell {
     ISimulationRunFactory* factory = nullptr;
+    PluginUse plugins{};
     const types::SimulationConfigData* simulation = nullptr;
     const common::types::MissionConfigData* mission = nullptr;
     const common::types::DroneConfigData* drone = nullptr;
@@ -111,6 +116,17 @@ public:
      * @return The number of recorded ranges.
      */
     [[nodiscard]] std::size_t pluginCount() const noexcept { return plugin_ranges_.size(); }
+
+    /**
+     * @brief How many cells one plugin contributed.
+     * @param plugin_index Which plugin, in enumeration order.
+     * @return The length of that plugin's contiguous range.
+     * @note This is the number of runs that will ever need that plugin's two libraries, which is
+     *       exactly what the registry reserves before dispatch. Getting it from the table rather
+     *       than recomputing the product of the composition's dimensions means the count can never
+     *       drift from the cells actually enumerated.
+     */
+    [[nodiscard]] std::size_t pluginCellCount(std::size_t plugin_index) const;
 
     /**
      * @brief One plugin's results.

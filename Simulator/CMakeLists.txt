@@ -15,7 +15,10 @@ add_executable(simulator_323998450_211633813
     src/MockLidar.cpp
     src/MockMovement.cpp
     src/PluginLibrary.cpp
-    src/PluginLoader.cpp
+    src/PluginDiscovery.cpp
+    src/PluginLifecycleLog.cpp
+    src/PluginRegistry.cpp
+    src/PluginUse.cpp
     src/Registrar.cpp
     src/RegistrationEntryPoints.cpp
     src/ResultsDirectory.cpp
@@ -147,6 +150,7 @@ add_executable(simulator_unit_test
     tests/MocksTest.cpp
     tests/ModeReportWritersTest.cpp
     tests/PluginLifecycleTest.cpp
+    tests/PluginRegistryTest.cpp
     tests/ResultsDirectoryTest.cpp
     tests/SimulationOutputWriterTest.cpp
     tests/SimulationPipelineTest.cpp
@@ -163,7 +167,10 @@ add_executable(simulator_unit_test
     src/MockLidar.cpp
     src/MockMovement.cpp
     src/PluginLibrary.cpp
-    src/PluginLoader.cpp
+    src/PluginDiscovery.cpp
+    src/PluginLifecycleLog.cpp
+    src/PluginRegistry.cpp
+    src/PluginUse.cpp
     src/Registrar.cpp
     src/RegistrationEntryPoints.cpp
     src/ResultsDirectory.cpp

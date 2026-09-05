@@ -46,6 +46,23 @@ void SimulationTaskTable::seal() {
 }
 
 /**
+ * @brief How many cells one plugin contributed.
+ * @param plugin_index Which plugin, in enumeration order.
+ * @return The length of that plugin's range, or 0 if there is no such plugin.
+ * @note An unknown index yields 0 rather than throwing, matching `resultsForPlugin`. A caller that
+ *       reserves zero uses of a library simply never loads it, which is the correct outcome for a
+ *       plugin with nothing to run.
+ */
+std::size_t SimulationTaskTable::pluginCellCount(std::size_t plugin_index) const {
+    if (plugin_index >= plugin_ranges_.size()) {
+        return 0;
+    }
+
+    const auto [begin, end] = plugin_ranges_[plugin_index];
+    return end - begin;
+}
+
+/**
  * @brief One plugin's results.
  * @param plugin_index Which plugin, in enumeration order.
  * @return Its contiguous slice of the results.

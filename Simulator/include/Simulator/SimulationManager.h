@@ -8,6 +8,7 @@
 #include <Simulator/ErrorLogger.h>
 #include <Simulator/ISimulation.h>
 #include <Simulator/ISimulationRunFactory.h>
+#include <Simulator/PluginUse.h>
 #include <Simulator/SimulationTaskTable.h>
 #include <Simulator/TaskExecutor.h>
 
@@ -28,8 +29,9 @@ namespace simulator {
  *       `run()` is those three at single-plugin scope, which keeps `ISimulation` independently
  *       usable rather than becoming a shell. The orchestrator does the same three steps across every
  *       plugin at once, so no barrier falls between them.
- * @note **It owns the factory, and the factory holds plugin `std::function`s.** This object must be
- *       destroyed before any plugin library is unloaded.
+ * @note **It owns the factory, which names the two plugin slots its runs borrow from.** The factory
+ *       holds no plugin callable of its own, so this object no longer has to outlive or predecease
+ *       any particular library - each run borrows and gives back within its own cell.
  */
 class SimulationManager final : public ISimulation {
 public:
@@ -38,10 +40,12 @@ public:
      * @param run_factory Factory already bound to one plugin pair; must not be null.
      * @param plugin_label Name of the varied plugin, used in log messages.
      * @param logger Sink for run failures; must outlive this object.
+     * @param plugins The plugin pair each of this manager's runs borrows a use of; empty when no
+     *        registry is managing the libraries, as in a test that wires a factory directly.
      * @throws std::invalid_argument when @p run_factory is null.
      */
     SimulationManager(std::unique_ptr<ISimulationRunFactory> run_factory, std::string plugin_label,
-                      ErrorLogger& logger);
+                      ErrorLogger& logger, PluginUse plugins = {});
 
     /**
      * @brief Run every combination the composition describes.
@@ -98,6 +102,7 @@ public:
 
 private:
     std::unique_ptr<ISimulationRunFactory> run_factory_;
+    PluginUse plugins_;
     std::string plugin_label_;
     ErrorLogger& logger_;
 };

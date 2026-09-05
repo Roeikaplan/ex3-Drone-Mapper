@@ -1,0 +1,110 @@
+BONUS REQUEST - Lazy plugin lifecycle: load once, on demand, unload when no longer needed
+=========================================================================================
+
+Submitters: Roei Kaplan (323998450), Saar Guy (211633813)
+
+WHAT WAS ASKED
+--------------
+From the assignment's threading model section:
+
+  "If you prefer to load all the required .so files ahead it might be a proper solution! In case you
+   find a way to avoid loading algorithms / mission_control instances simultaneously but rather load
+   them (once!) only when needed and unload if not being used anymore (but without loading them
+   again!) - you can ask for a bonus for that."
+
+WHAT WE BUILT
+-------------
+The simulator never loads a folder of plugins up front. Each .so is mapped by the first run that
+actually needs it, and unmapped the moment the last run that needs it finishes - typically on a
+worker thread, in the middle of the batch. No library is ever loaded twice, and none is ever
+reloaded after being unloaded.
+
+Three properties, in the assignment's own terms:
+
+  1. NOT SIMULTANEOUS   A library is resident only while one of its own runs is in flight. In a
+                        single-threaded run exactly two are resident at any instant: the varied
+                        plugin currently running and the fixed one it is paired with. With N worker
+                        threads the peak is bounded by the number of live threads, not by the size
+                        of the folder.
+
+  2. LOADED ONCE        Each file is dlopen'ed at most once for the whole program - including files
+                        that fail to load, which are attempted once and then never retried.
+
+  3. UNLOADED WHEN      dlclose happens as soon as a plugin's last run completes, not at exit. A .so
+     NO LONGER NEEDED   that opens but registers nothing usable is unmapped immediately as well.
+
+HOW IT WORKS (and why "never reload" is structural, not lucky)
+--------------------------------------------------------------
+The design rests on one observation: the simulator's task table is fully known before any thread
+starts. So the exact number of runs that will ever need a given .so is countable in advance.
+
+  - Simulator/src/PluginDiscovery.cpp   lists the .so files. It loads nothing; there is no dlopen
+                                        reachable from that translation unit at all. The whole task
+                                        table is built from filenames.
+  - Simulator/src/PluginRegistry.cpp    owns one PluginSlot per file. Before dispatch, each slot is
+                                        reserved once per run that will use it. The first run to ask
+                                        for a factory triggers the load; the release that takes the
+                                        outstanding count to zero triggers the unload.
+  - Simulator/src/PluginUse.cpp         the RAII guard each run holds. It is declared before the run
+                                        in SimulationManager::runCell, so it is destroyed after it -
+                                        i.e. after both plugin instances are gone.
+
+A count of zero proves no future run can need the library, so unloading is safe by construction -
+it does not depend on the scheduler. And the slot's state machine has no edge back to "not loaded":
+
+    NotLoaded -> Loaded -> Unloaded        NotLoaded -> Failed
+
+so a second load is not something we avoid doing, it is something the code cannot do. Both dead ends
+are asserted directly by tests.
+
+Loading is serialised by one mutex in the registry. That is required, not incidental: the
+file-to-factory association is inferred from the registrar's factory count before a dlopen versus
+after, so exactly one load may be in flight at a time. Everything after the first use of a plugin
+takes a lock-free fast path - one atomic load per run.
+
+HOW TO VERIFY
+-------------
+1. Build and run the registry test suite, which asserts all three properties:
+
+     cmake --preset default && cmake --build --preset default
+     ./build/default/Simulator/simulator_unit_test --gtest_filter='PluginRegistryTest.*:PluginLifecycleTest.*'
+
+   The cases that carry the claim:
+     PluginRegistryTest.DiscoveryLoadsNothing                        (property 1)
+     PluginRegistryTest.PluginsUsedInSequenceAreNeverMappedTogether  (property 1, peak == 1)
+     PluginRegistryTest.RepeatedAcquiresLoadTheLibraryOnlyOnce       (property 2)
+     PluginRegistryTest.AFailedLoadIsAttemptedOnceAndStaysFailed     (property 2, failures too)
+     PluginRegistryTest.AnUnloadedPluginIsNeverReloaded              (property 2, the "again" clause)
+     PluginRegistryTest.TheLastReleaseUnloadsAndTheOnesBeforeItDoNot (property 3, exact boundary)
+     PluginRegistryTest.ConcurrentAcquiresLoadEachLibraryExactlyOnce (all three, under 4 threads)
+
+2. Run the simulator normally and read the closing line, e.g.
+
+     ./build/default/Simulator/simulator_323998450_211633813 -competition \
+       simulation=inputs/sim_compose.yaml \
+       mission_control=build/default/plugins/mission_controls/MissionControl_323998450_211633813.so \
+       algorithms_folder=build/default/plugins/algorithms num_threads=1
+
+   It ends with:
+
+     plugin lifecycle: discovered=N loaded=N dlopen=N dlclose=N peak_mapped=2 mapped_at_end=0
+
+   dlopen == the number of distinct files (never more), mapped_at_end == 0, and peak_mapped == 2
+   single-threaded however many algorithms the folder holds. Under the eager scheme peak_mapped
+   would have equalled N.
+
+3. Read <results_directory>/plugin_lifecycle.log, written into the same folder as the reports. One
+   timestamped line per event, naming the thread and the number of libraries mapped after it:
+
+     ...Z thread=140234... LOAD   Algorithm_A.so mapped=2
+     ...Z thread=140234... UNLOAD Algorithm_A.so mapped=1
+     ...Z thread=140234... LOAD   Algorithm_B.so mapped=2
+
+   Each file appears in exactly one LOAD (or LOAD_FAILED) line - grep for a repeat and there is
+   none - and single-threaded, each plugin's UNLOAD precedes the next plugin's LOAD.
+
+WHAT IT COST
+------------
+Correctness of the report is unchanged: which plugins loaded is now discovered during the run rather
+than before it, so the mode-level report's errors: list is assembled after execution instead of
+before. Reports over the same inputs remain byte-identical, thread count included.

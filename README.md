@@ -141,10 +141,37 @@ compiler or linker check catches. The unit-test binary sets the same property, b
 `PluginLifecycleTest` loads real fixture plugins.
 
 Loading is **load-then-claim**: a library's static initialisers push factories into the `Registrar`
-during `dlopen`, and the loader immediately takes ownership of whatever appeared. A library that opens
-cleanly but registers nothing is a *failure*, not a success — it is named in the report's `errors:`
-list. All loading happens on the main thread before any worker starts, which is what keeps the
-registration path free of locks.
+during `dlopen`, and the registry immediately takes ownership of whatever appeared. A library that
+opens cleanly but registers nothing is a *failure*, not a success — it is named in the report's
+`errors:` list. The claim compares the registrar's factory count before the `dlopen` with the count
+after, so exactly one load may be in flight at a time; `PluginRegistry` holds one mutex for that.
+
+### Plugin lifecycle — loaded on demand, unloaded when done
+
+**No `.so` is loaded up front.** Discovery lists the files in a folder and builds the entire task
+table from filenames; a library is `dlopen`ed by the first run that actually needs it, and `dlclose`d
+the moment the last run that needs it finishes — usually on a worker thread, mid-batch. No file is
+ever loaded twice, and none is ever reloaded after being unloaded. This is the assignment's plugin
+bonus; `bonus.txt` describes it and how to check it.
+
+The mechanism is one number. The task table is complete before any thread starts, so the number of
+runs that will ever need a given file is known and reserved on its slot up front. Each run gives its
+uses back through a `PluginUseGuard` declared *before* the run it guards — so the run, and both plugin
+instances, are destroyed first. The release that takes a slot's count to zero destroys the factory and
+unmaps the library, and a count of zero *proves* no future run can need it. The slot's state machine
+runs one way only — `NotLoaded → Loaded → Unloaded`, or `NotLoaded → Failed` — so a reload is not
+something the scheduler avoids, it is something no code path can express.
+
+Every run ends with a summary line, and each results directory gets a `plugin_lifecycle.log` with one
+timestamped line per load and unload:
+
+```
+plugin lifecycle: discovered=3 loaded=3 dlopen=3 dlclose=3 peak_mapped=2 mapped_at_end=0
+```
+
+`peak_mapped` is the number to look at: single-threaded it is 2 — the plugin running and the fixed one
+it is paired with — however many plugins the folder holds. Loading everything up front would make it
+the size of the folder.
 
 ### Teardown order — not negotiable
 
@@ -154,16 +181,21 @@ registration path free of locks.
    returning, so no thread can still be inside plugin code afterwards.
 2. **Destroy every run.** Each `SimulationRunImpl` is a local of `SimulationManager::runCell`, so
    every plugin instance is gone when its cell finishes.
-3. **Destroy the orchestrator**, releasing the run factories that hold copies of each plugin's
-   `std::function`.
-4. **Clear the `Registrar`, then release the libraries** — `~PluginLibrary` is the only place
-   `dlclose` is ever called.
+3. **Destroy the orchestrator**, so nothing is left that could still ask the registry for a factory.
+4. **Clear the `Registrar`, then sweep the registry** — `~PluginLibrary` is the only place `dlclose`
+   is ever called.
 
-Step 3 matters more than it looks. "Objects related to the `.so`" includes the `std::function`
-factories themselves, whose callable targets are compiled into the plugin's code segment; `dlclose`
-while one is alive unmaps the code its destructor is about to run. Getting the order wrong does not
-fail at the call site — it segfaults during static destruction *after* `main` has returned 0, with a
-stack naming nothing in this project. `PluginLifecycleTest` exists to catch exactly that.
+Most libraries are already gone by then: each one is unmapped by its own last run, in the same order
+at a smaller scale — the run and its plugin instances die, then the slot's factory, then the handle.
+The final sweep catches only a library no run ever needed.
+
+The factory step matters more than it looks. "Objects related to the `.so`" includes the
+`std::function` factories themselves, whose callable targets are compiled into the plugin's code
+segment; `dlclose` while one is alive unmaps the code its destructor is about to run. This is why
+`SimulationRunFactoryImpl` borrows a factory from its slot per call rather than holding a copy — a
+copy would pin its library in memory for the whole batch. Getting the order wrong does not fail at the
+call site; it segfaults during static destruction *after* `main` has returned 0, with a stack naming
+nothing in this project. `PluginLifecycleTest` exists to catch exactly that.
 
 ### Threading
 
@@ -190,9 +222,11 @@ plugin pair goes into **one** table, no barrier falls between plugins and the po
 the end. Results are written to index-addressed slots, so **reports are byte-identical at any thread
 count**; this is verified by diffing a full competitive run at 4 threads against a serial baseline.
 
-Shared mutable state is exactly two things: the `ErrorLogger` (mutex-protected, both sinks under one
-lock) and `std::cout` (only written before and after execution). Everything else is per-run and
-reachable from one `SimulationRunImpl`.
+Shared mutable state is small and deliberate: the `ErrorLogger` and the `PluginLifecycleLog` (each
+mutex-protected, all sinks under one lock), `std::cout` (only written before and after execution), and
+the plugin registry's load path — one mutex taken once per plugin, not once per run, because the
+load-then-claim inference needs exactly one load in flight. Everything else is per-run and reachable
+from one `SimulationRunImpl`.
 
 ---
 

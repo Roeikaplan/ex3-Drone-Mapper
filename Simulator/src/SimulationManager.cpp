@@ -5,6 +5,7 @@
 
 #include <Simulator/SimulationManager.h>
 
+#include <Simulator/PluginRegistry.h>
 #include <Simulator/UtcTime.h>
 
 #include <exception>
@@ -77,11 +78,14 @@ void logRunOutcome(ErrorLogger& logger, const std::string& plugin_label,
  * @param run_factory Factory already bound to one plugin pair.
  * @param plugin_label Name of the varied plugin.
  * @param logger Sink for run failures.
+ * @param plugins The plugin pair this manager's runs borrow a use of; empty when unmanaged.
  * @throws std::invalid_argument when @p run_factory is null.
  */
 SimulationManager::SimulationManager(std::unique_ptr<ISimulationRunFactory> run_factory,
-                                     std::string plugin_label, ErrorLogger& logger)
+                                     std::string plugin_label, ErrorLogger& logger,
+                                     PluginUse plugins)
     : run_factory_(std::move(run_factory)),
+      plugins_(plugins),
       plugin_label_(std::move(plugin_label)),
       logger_(logger) {
     if (!run_factory_) {
@@ -108,8 +112,8 @@ void SimulationManager::enumerate(const types::SimulationCompositionData& compos
         for (const common::types::MissionConfigData& mission : std::get<1>(group)) {
             for (const common::types::DroneConfigData& drone : composition.drone_configs) {
                 for (const common::types::LidarConfigData& lidar : composition.lidar_configs) {
-                    table.append(RunCell{run_factory_.get(), &simulation, &mission, &drone, &lidar,
-                                         output_path});
+                    table.append(RunCell{run_factory_.get(), plugins_, &simulation, &mission,
+                                         &drone, &lidar, output_path});
                 }
             }
         }
@@ -127,9 +131,15 @@ void SimulationManager::enumerate(const types::SimulationCompositionData& compos
  * @note `catch (...)` is present because plugin code runs inside `run()`. An exception escaping a
  *       third-party plugin must not end the batch - and once execution is concurrent, must not reach
  *       a worker's boundary at all.
+ * @note **The guard is declared before the `try` on purpose.** Members and locals are destroyed in
+ *       reverse order of declaration, so this ordering makes the run - and with it both plugin
+ *       instances - die first, and the use is given back only afterwards. If this cell happens to
+ *       hold the last outstanding use of a library, the guard's destructor is what unmaps it, and
+ *       unmapping code that a live object still points into is the one way this design can crash.
  */
 void SimulationManager::runCell(SimulationTaskTable& table, std::size_t index) {
     const RunCell& cell = table.cell(index);
+    const PluginUseGuard use{cell.plugins};
 
     try {
         std::unique_ptr<ISimulationRun> run = cell.factory->create(
@@ -137,6 +147,14 @@ void SimulationManager::runCell(SimulationTaskTable& table, std::size_t index) {
         types::SimulationResult result = run->run();
         logRunOutcome(logger_, plugin_label_, result);
         table.result(index) = std::move(result);
+    } catch (const PluginUnavailable& error) {
+        /**
+         * @note Deliberately not logged. The registry already reported this library's load failure
+         *       once, when it happened; every run of that plugin fails for that one reason, and
+         *       repeating it per run would bury the real diagnostic under its own consequences. The
+         *       result still carries the reason, and the plugin is still named under `errors:`.
+         */
+        table.result(index) = makeErrorResult(*cell.simulation, *cell.mission, error.what());
     } catch (const std::exception& error) {
         logger_.log("RUN_FAILED",
                     plugin_label_ + ": run could not be executed: " + std::string{error.what()});
@@ -181,6 +199,20 @@ types::SimulationManagerReport SimulationManager::run(
     SimulationTaskTable table;
     enumerate(composition, output_path, table);
     table.seal();
+
+    /**
+     * @note This path reserves its own plugin uses, because nothing else has. The orchestrator does
+     *       it for the runs it schedules; a caller using `ISimulation::run` directly gets the same
+     *       accounting here, so a cell can never give back a use that was never taken.
+     */
+    if (plugins_.registry != nullptr) {
+        if (plugins_.mission_control != nullptr) {
+            plugins_.registry->reserve(*plugins_.mission_control, table.size());
+        }
+        if (plugins_.algorithm != nullptr) {
+            plugins_.registry->reserve(*plugins_.algorithm, table.size());
+        }
+    }
 
     InlineExecutor executor;
     executor.forEach(table.size(), [this, &table](std::size_t index) { runCell(table, index); });

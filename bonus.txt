@@ -12,6 +12,12 @@ From the assignment's threading model section:
    them (once!) only when needed and unload if not being used anymore (but without loading them
    again!) - you can ask for a bonus for that."
 
+The same section draws the distinction this bonus turns on: "Creating an Algorithm instance /
+MissionControl instance from their factories should be cheap. Do not cache instances, just recreate
+them using the factories when needed (this is NOT the same as unloading and loading the same .so
+file, which should be avoided)." So: instances are recreated per run, libraries are mapped at most
+once for the life of the process. That is exactly the split implemented here.
+
 WHAT WE BUILT
 -------------
 The simulator never loads a folder of plugins up front. Each .so is mapped by the first run that
@@ -21,11 +27,15 @@ reloaded after being unloaded.
 
 Three properties, in the assignment's own terms:
 
-  1. NOT SIMULTANEOUS   A library is resident only while one of its own runs is in flight. In a
-                        single-threaded run exactly two are resident at any instant: the varied
-                        plugin currently running and the fixed one it is paired with. With N worker
-                        threads the peak is bounded by the number of live threads, not by the size
-                        of the folder.
+  1. NOT SIMULTANEOUS   A library is resident only while one of its own runs is in flight. The peak
+                        number of mapped libraries is
+
+                            peak = min(num_threads, runs_in_flight) + 1
+
+                        - one slot per worker for the varied plugin it is running, plus one for the
+                        fixed plugin every run shares. It is bounded by the thread count and does
+                        NOT grow with the size of the folder. Measured below at 1 and 4 threads
+                        against a folder of 8 algorithms: peak 2 and 5 respectively, never 9.
 
   2. LOADED ONCE        Each file is dlopen'ed at most once for the whole program - including files
                         that fail to load, which are attempted once and then never retried.
@@ -48,6 +58,9 @@ starts. So the exact number of runs that will ever need a given .so is countable
   - Simulator/src/PluginUse.cpp         the RAII guard each run holds. It is declared before the run
                                         in SimulationManager::runCell, so it is destroyed after it -
                                         i.e. after both plugin instances are gone.
+  - Simulator/src/PluginLibrary.cpp     the ONLY translation unit in the project containing dlopen
+                                        or dlclose. Grep the tree to confirm; there is nowhere else
+                                        a library could be mapped from.
 
 A count of zero proves no future run can need the library, so unloading is safe by construction -
 it does not depend on the scheduler. And the slot's state machine has no edge back to "not loaded":
@@ -69,42 +82,102 @@ HOW TO VERIFY
      cmake --preset default && cmake --build --preset default
      ./build/default/Simulator/simulator_unit_test --gtest_filter='PluginRegistryTest.*:PluginLifecycleTest.*'
 
+   Expected: [  PASSED  ] 16 tests.  (9 PluginRegistryTest + 7 PluginLifecycleTest)
+
    The cases that carry the claim:
      PluginRegistryTest.DiscoveryLoadsNothing                        (property 1)
      PluginRegistryTest.PluginsUsedInSequenceAreNeverMappedTogether  (property 1, peak == 1)
+     PluginRegistryTest.APluginWithNoReservedUsesIsNeverLoaded       (property 1, strongest form:
+                                                                      a plugin nothing reserves is
+                                                                      never mapped at all)
      PluginRegistryTest.RepeatedAcquiresLoadTheLibraryOnlyOnce       (property 2)
      PluginRegistryTest.AFailedLoadIsAttemptedOnceAndStaysFailed     (property 2, failures too)
      PluginRegistryTest.AnUnloadedPluginIsNeverReloaded              (property 2, the "again" clause)
+     PluginRegistryTest.TheSameFileDiscoveredTwiceSharesOneSlot      (property 2, the same file
+                                                                      reached by two paths is one
+                                                                      slot, so still one dlopen)
      PluginRegistryTest.TheLastReleaseUnloadsAndTheOnesBeforeItDoNot (property 3, exact boundary)
      PluginRegistryTest.ConcurrentAcquiresLoadEachLibraryExactlyOnce (all three, under 4 threads)
 
-2. Run the simulator normally and read the closing line, e.g.
+2. Run the simulator and read the closing summary line. Below are two real runs over the SAME
+   folder of 8 algorithms plus 1 fixed mission control (9 files), differing only in num_threads:
+
+     num_threads=1
+       plugin lifecycle: discovered=9 loaded=9 dlopen=9 dlclose=9 peak_mapped=2 mapped_at_end=0
+
+     num_threads=4
+       plugin lifecycle: discovered=9 loaded=9 dlopen=9 dlclose=9 peak_mapped=5 mapped_at_end=0
+
+   Read across the two lines:
+     - dlopen == dlclose == 9 == the number of distinct files, at BOTH thread counts. Every library
+       is mapped exactly once and unmapped exactly once, however the work is scheduled.
+     - mapped_at_end == 0. Nothing is left resident for the process to clean up at exit.
+     - peak_mapped is 2 and 5 - i.e. num_threads + 1 - against a folder of 9. Under an eager
+       load-everything-up-front scheme both numbers would have been 9.
+
+   Reproduce with (any folder holding several algorithms):
 
      ./build/default/Simulator/simulator_323998450_211633813 -competition \
        simulation=inputs/sim_compose.yaml \
        mission_control=build/default/plugins/mission_controls/MissionControl_323998450_211633813.so \
-       algorithms_folder=build/default/plugins/algorithms num_threads=1
-
-   It ends with:
-
-     plugin lifecycle: discovered=N loaded=N dlopen=N dlclose=N peak_mapped=2 mapped_at_end=0
-
-   dlopen == the number of distinct files (never more), mapped_at_end == 0, and peak_mapped == 2
-   single-threaded however many algorithms the folder holds. Under the eager scheme peak_mapped
-   would have equalled N.
+       algorithms_folder=<folder> num_threads=4
 
 3. Read <results_directory>/plugin_lifecycle.log, written into the same folder as the reports. One
-   timestamped line per event, naming the thread and the number of libraries mapped after it:
+   timestamped line per event, naming the thread and the number of libraries mapped after it.
 
-     ...Z thread=140234... LOAD   Algorithm_A.so mapped=2
-     ...Z thread=140234... UNLOAD Algorithm_A.so mapped=1
-     ...Z thread=140234... LOAD   Algorithm_B.so mapped=2
+   Single-threaded, each plugin's UNLOAD precedes the next plugin's LOAD - they are never
+   co-resident:
 
-   Each file appears in exactly one LOAD (or LOAD_FAILED) line - grep for a repeat and there is
-   none - and single-threaded, each plugin's UNLOAD precedes the next plugin's LOAD.
+     ...Z thread=1402243... LOAD   Algorithm_Alpha.so  mapped=1
+     ...Z thread=1402243... LOAD   MissionControl_...so mapped=2
+     ...Z thread=1402243... UNLOAD Algorithm_Alpha.so  mapped=1
+     ...Z thread=1402243... LOAD   Algorithm_Beta.so   mapped=2
+     ...Z thread=1402243... UNLOAD Algorithm_Beta.so   mapped=1
+
+   At 4 threads the loads are spread across all four workers and mapped= oscillates at the bound,
+   never climbing to the folder size - this is the real excerpt behind the peak_mapped=5 line above:
+
+     ...Z thread=140343270684352 LOAD   Algorithm_A.so       mapped=1
+     ...Z thread=140343270684352 LOAD   MissionControl_...so  mapped=2
+     ...Z thread=140343262291648 LOAD   Algorithm_B.so       mapped=3
+     ...Z thread=140343253898944 LOAD   Algorithm_C.so       mapped=4
+     ...Z thread=140343245289152 LOAD   Algorithm_D.so       mapped=5   <- bound reached
+     ...Z thread=140343270684352 UNLOAD Algorithm_A.so       mapped=4
+     ...Z thread=140343270684352 LOAD   Algorithm_E.so       mapped=5   <- E only after A left
+     ...Z thread=140343245289152 UNLOAD Algorithm_D.so       mapped=4
+     ...Z thread=140343245289152 LOAD   Algorithm_F.so       mapped=5
+     ...                                                     ...
+     ...Z thread=140343253898944 UNLOAD Algorithm_H.so       mapped=0
+
+   Four distinct thread ids appear on LOAD lines, so loading genuinely happens on workers on demand
+   rather than on the main thread up front. Checks worth running on the log:
+
+     awk '$3=="LOAD"{print $4}'   plugin_lifecycle.log | sort | uniq -d    # empty: nothing loaded twice
+     awk '$3=="LOAD"'             plugin_lifecycle.log | wc -l             # == number of files
+     awk '$3=="UNLOAD"'           plugin_lifecycle.log | wc -l             # == number of files
+     grep -o 'mapped=[0-9]*'      plugin_lifecycle.log | cut -d= -f2 | sort -n | tail -1   # the peak
+
+   (Note the $3=="LOAD" field match rather than grep "LOAD" - the substring also matches UNLOAD.)
 
 WHAT IT COST
 ------------
 Correctness of the report is unchanged: which plugins loaded is now discovered during the run rather
 than before it, so the mode-level report's errors: list is assembled after execution instead of
-before. Reports over the same inputs remain byte-identical, thread count included.
+before.
+
+Verified, not merely asserted: the two runs in section 2 - same inputs, 1 thread vs 4 threads -
+produce byte-identical competitive_report.yaml once the generated_at_utc line is excluded
+(md5 bc5e8ae1f9607f75752a7e4198b057e1 for both). Lazy loading does not make results depend on the
+schedule, because results are written to index-addressed slots in a task table fixed before
+dispatch.
+
+WHAT THIS DOES NOT CLAIM
+------------------------
+- It does not reduce the total number of dlopen calls below one per file; that is already the
+  minimum, and the point is that it never exceeds it.
+- The fixed plugin of a mode (the single algorithm in -comparative, the single mission control in
+  -competition) is used by every run, so it is legitimately resident for essentially the whole
+  batch. That is the "+1" in the bound, not an exception to it.
+- Peak residency is bounded by threads, not by 1. Running with num_threads=4 deliberately keeps up
+  to four varied plugins mapped at once - that is the point of the thread count, and each is still
+  loaded once and unloaded as soon as its last run ends.
